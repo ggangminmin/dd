@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ chatbot_name }} - 고객지원 챗봇</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- 로그인 화면 -->
+        <div id="login-screen" class="screen active">
+            <div class="login-box">
+                <h1>{{ chatbot_name }}</h1>
+                <p class="subtitle">상담 이력을 기억하는 AI 고객지원</p>
+                <div class="login-form">
+                    <input type="text" id="username-input" placeholder="이름을 입력하세요" autocomplete="off">
+                    <button id="login-btn" onclick="loginUser()">시작하기</button>
+                </div>
+                <div id="login-error" class="error-message"></div>
+            </div>
+        </div>
+
+        <!-- 채팅 화면 -->
+        <div id="chat-screen" class="screen">
+            <div class="chat-container">
+                <!-- 헤더 -->
+                <div class="chat-header">
+                    <div class="header-left">
+                        <h2>{{ chatbot_name }}</h2>
+                        <span id="user-info" class="user-info"></span>
+                    </div>
+                    <div class="header-right">
+                        <button class="icon-btn" onclick="showHistory()" title="대화 이력">
+                            📊
+                        </button>
+                        <button class="icon-btn" onclick="logout()" title="로그아웃">
+                            🚪
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 메시지 영역 -->
+                <div id="chat-messages" class="chat-messages">
+                    <div class="welcome-message">
+                        <p>안녕하세요! 무엇을 도와드릴까요?</p>
+                    </div>
+                </div>
+
+                <!-- 입력 영역 -->
+                <div class="chat-input-container">
+                    <div class="input-wrapper">
+                        <textarea
+                            id="message-input"
+                            placeholder="메시지를 입력하세요..."
+                            rows="1"
+                            onkeydown="handleKeyPress(event)"
+                        ></textarea>
+                        <button id="send-btn" onclick="sendMessage()">
+                            전송
+                        </button>
+                    </div>
+                    <div id="sentiment-indicator" class="sentiment-indicator"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 통계/이력 모달 -->
+        <div id="history-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>대화 통계</h3>
+                    <button class="close-btn" onclick="closeHistory()">&times;</button>
+                </div>
+                <div id="history-content" class="modal-body">
+                    <!-- 통계 정보가 여기에 표시됩니다 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
