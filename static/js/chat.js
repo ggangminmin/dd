@@ -226,7 +226,7 @@ async function sendMessage() {
     input.style.height = 'auto';
 
     // 사용자 메시지 표시 (이미지 URL은 나중에 추가)
-    const displayMessage = message || '[파일 첨부]';
+    const displayMessage = message || ''; // 메시지 없으면 빈 문자열
     const tempMessageId = Date.now(); // 임시 ID
     addUserMessage(displayMessage, [], tempMessageId);
 
