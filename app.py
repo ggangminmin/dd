@@ -9,6 +9,8 @@ from sentiment_analyzer import SentimentAnalyzer
 from file_processor import FileProcessor
 import os
 import json
+import uuid
+from werkzeug.utils import secure_filename
 
 # GPT API 연동 (선택적)
 try:
@@ -20,9 +22,18 @@ except ImportError:
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# 업로드 폴더 설정
+UPLOAD_FOLDER = os.path.join(app.static_folder, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
 # 데이터베이스 및 감정 분석기 초기화
 db = Database()
 sentiment_analyzer = SentimentAnalyzer()
+
+def allowed_image_file(filename):
+    """이미지 파일인지 확인"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
 # OpenAI 클라이언트 초기화 (API 키가 있을 경우)
 if OPENAI_AVAILABLE and Config.OPENAI_API_KEY and Config.USE_GPT_API:
@@ -100,11 +111,27 @@ def chat():
     file_contents = []
     file_infos = []
     has_image = False
+    image_urls = []
 
     for file in files:
         if file and file.filename:
             # 파일 읽기
             file_data = file.read()
+
+            # 이미지 파일인 경우 저장
+            if allowed_image_file(file.filename):
+                # 고유한 파일명 생성
+                ext = file.filename.rsplit('.', 1)[1].lower()
+                unique_filename = f"{uuid.uuid4()}.{ext}"
+                filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+
+                # 파일 저장
+                with open(filepath, 'wb') as f:
+                    f.write(file_data)
+
+                # URL 생성
+                image_url = f"/static/uploads/{unique_filename}"
+                image_urls.append(image_url)
 
             # 파일 처리
             result = FileProcessor.process_file(file_data, file.filename)
@@ -151,7 +178,8 @@ def chat():
         'response': bot_response,
         'sentiment': sentiment,
         'sentiment_info': sentiment_result,
-        'files_processed': len(file_infos)
+        'files_processed': len(file_infos),
+        'image_urls': image_urls
     })
 
 

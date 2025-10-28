@@ -225,9 +225,10 @@ async function sendMessage() {
     input.value = '';
     input.style.height = 'auto';
 
-    // 사용자 메시지 표시
+    // 사용자 메시지 표시 (이미지 URL은 나중에 추가)
     const displayMessage = message || '[파일 첨부]';
-    addUserMessage(displayMessage, selectedFiles.length > 0);
+    const tempMessageId = Date.now(); // 임시 ID
+    addUserMessage(displayMessage, [], tempMessageId);
 
     // 전송 버튼 비활성화
     const sendBtn = document.getElementById('send-btn');
@@ -259,6 +260,11 @@ async function sendMessage() {
         // 타이핑 인디케이터 제거
         hideTypingIndicator();
 
+        // 이미지 URL이 있으면 사용자 메시지에 추가
+        if (data.image_urls && data.image_urls.length > 0) {
+            updateUserMessageWithImages(tempMessageId, data.image_urls);
+        }
+
         // 봇 응답 표시
         addBotMessage(data.response);
 
@@ -285,13 +291,27 @@ async function sendMessage() {
 /**
  * 사용자 메시지 추가
  */
-function addUserMessage(message, scroll = true) {
+function addUserMessage(message, imageUrls = [], messageId = null, scroll = true) {
     const messagesDiv = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user';
 
+    if (messageId) {
+        messageDiv.setAttribute('data-message-id', messageId);
+    }
+
+    let imagesHtml = '';
+    if (imageUrls && imageUrls.length > 0) {
+        imagesHtml = '<div class="message-images">';
+        imageUrls.forEach(url => {
+            imagesHtml += `<img src="${url}" alt="첨부 이미지" class="message-image">`;
+        });
+        imagesHtml += '</div>';
+    }
+
     messageDiv.innerHTML = `
-        <div class="message-content">${escapeHtml(message)}</div>
+        ${imagesHtml}
+        ${message ? `<div class="message-content">${escapeHtml(message)}</div>` : ''}
         <div class="message-time">${getCurrentTime()}</div>
     `;
 
@@ -300,6 +320,32 @@ function addUserMessage(message, scroll = true) {
     if (scroll) {
         scrollToBottom();
     }
+}
+
+/**
+ * 사용자 메시지에 이미지 추가 (업로드 후)
+ */
+function updateUserMessageWithImages(messageId, imageUrls) {
+    const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageDiv) return;
+
+    const messageContent = messageDiv.querySelector('.message-content');
+    const messageTime = messageDiv.querySelector('.message-time');
+
+    let imagesHtml = '<div class="message-images">';
+    imageUrls.forEach(url => {
+        imagesHtml += `<img src="${url}" alt="첨부 이미지" class="message-image">`;
+    });
+    imagesHtml += '</div>';
+
+    // 이미지를 메시지 내용 앞에 삽입
+    if (messageContent) {
+        messageContent.insertAdjacentHTML('beforebegin', imagesHtml);
+    } else {
+        messageTime.insertAdjacentHTML('beforebegin', imagesHtml);
+    }
+
+    scrollToBottom();
 }
 
 /**

@@ -19,6 +19,10 @@ instance/
 # 환경 변수
 .env
 
+# 업로드된 파일
+static/uploads/*
+!static/uploads/.gitignore
+
 # IDE
 .vscode/
 .idea/

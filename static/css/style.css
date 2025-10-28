@@ -535,6 +535,35 @@ body {
     color: #c0392b;
 }
 
+/* 메시지 내 이미지 스타일 */
+.message-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.message-image {
+    max-width: 300px;
+    max-height: 300px;
+    border-radius: 12px;
+    object-fit: cover;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.message-image:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 여러 이미지가 있을 때 */
+.message-images .message-image {
+    max-width: 200px;
+    max-height: 200px;
+}
+
 /* 반응형 디자인 */
 @media (max-width: 600px) {
     .container {
@@ -561,5 +590,15 @@ body {
 
     .file-preview {
         max-height: 150px;
+    }
+
+    .message-image {
+        max-width: 200px !important;
+        max-height: 200px !important;
+    }
+
+    .message-images .message-image {
+        max-width: 150px !important;
+        max-height: 150px !important;
     }
 }
