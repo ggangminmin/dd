@@ -131,21 +131,6 @@ def chat():
             # URL 생성
             file_url = f"/static/uploads/{unique_filename}"
 
-            # 파일 정보 저장
-            file_info_dict = {
-                'filename': file.filename,
-                'url': file_url,
-                'size': len(file_data),
-                'is_image': allowed_image_file(file.filename),
-                'extension': ext
-            }
-
-            # 이미지인 경우 image_urls에도 추가
-            if file_info_dict['is_image']:
-                image_urls.append(file_url)
-
-            attached_files.append(file_info_dict)
-
             # 파일 처리 (텍스트 추출)
             result = FileProcessor.process_file(file_data, file.filename)
 
@@ -154,6 +139,25 @@ def chat():
                 file_infos.append(result['info'])
                 if result.get('has_image'):
                     has_image = True
+
+                # 파일 정보 저장 (table_data 포함)
+                file_info_dict = {
+                    'filename': file.filename,
+                    'url': file_url,
+                    'size': len(file_data),
+                    'is_image': allowed_image_file(file.filename),
+                    'extension': ext
+                }
+
+                # 표 데이터가 있으면 추가 (Excel, CSV)
+                if 'table_data' in result:
+                    file_info_dict['table_data'] = result['table_data']
+
+                # 이미지인 경우 image_urls에도 추가
+                if file_info_dict['is_image']:
+                    image_urls.append(file_url)
+
+                attached_files.append(file_info_dict)
             else:
                 return jsonify({'error': result['error']}), 400
 

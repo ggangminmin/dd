@@ -161,6 +161,15 @@ class FileProcessor:
             text = df.to_string()
             summary = f"행: {len(df)}, 열: {len(df.columns)}\n열 이름: {', '.join(df.columns.tolist())}\n\n"
 
+            # 표 데이터 추출 (최대 20행)
+            preview_df = df.head(20)
+            table_data = {
+                'headers': preview_df.columns.tolist(),
+                'rows': preview_df.values.tolist(),
+                'total_rows': len(df),
+                'total_columns': len(df.columns)
+            }
+
             return {
                 'success': True,
                 'info': {
@@ -170,7 +179,8 @@ class FileProcessor:
                     'columns': len(df.columns)
                 },
                 'text': summary + text,
-                'has_image': False
+                'has_image': False,
+                'table_data': table_data
             }
         except Exception as e:
             return {
@@ -188,6 +198,15 @@ class FileProcessor:
             text = df.to_string()
             summary = f"행: {len(df)}, 열: {len(df.columns)}\n열 이름: {', '.join(df.columns.tolist())}\n\n"
 
+            # 표 데이터 추출 (최대 20행)
+            preview_df = df.head(20)
+            table_data = {
+                'headers': preview_df.columns.tolist(),
+                'rows': preview_df.values.tolist(),
+                'total_rows': len(df),
+                'total_columns': len(df.columns)
+            }
+
             return {
                 'success': True,
                 'info': {
@@ -197,7 +216,8 @@ class FileProcessor:
                     'columns': len(df.columns)
                 },
                 'text': summary + text,
-                'has_image': False
+                'has_image': False,
+                'table_data': table_data
             }
         except Exception as e:
             return {

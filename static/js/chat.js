@@ -349,6 +349,12 @@ function updateUserMessageWithFiles(messageId, attachedFiles) {
     if (otherFiles.length > 0) {
         filesHtml += '<div class="message-files">';
         otherFiles.forEach(file => {
+            // Excel/CSV 표 미리보기
+            if (file.table_data) {
+                filesHtml += renderTablePreview(file);
+            }
+
+            // 파일 카드 (다운로드용)
             const fileIcon = getFileIcon(file.filename);
             const fileSize = formatFileSize(file.size);
             filesHtml += `
@@ -565,6 +571,52 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+/**
+ * Excel/CSV 표 미리보기 렌더링
+ */
+function renderTablePreview(file) {
+    const tableData = file.table_data;
+    if (!tableData || !tableData.headers || !tableData.rows) {
+        return '';
+    }
+
+    let html = '<div class="excel-preview-container">';
+    html += `<div class="excel-filename">${escapeHtml(file.filename)}</div>`;
+
+    // 전체 행 수 표시
+    if (tableData.total_rows > tableData.rows.length) {
+        html += `<div class="excel-info">처음 ${tableData.rows.length}행 표시 (전체 ${tableData.total_rows}행)</div>`;
+    }
+
+    html += '<div class="excel-table-wrapper">';
+    html += '<table class="excel-table">';
+
+    // 헤더
+    html += '<thead><tr>';
+    tableData.headers.forEach(header => {
+        html += `<th>${escapeHtml(String(header))}</th>`;
+    });
+    html += '</tr></thead>';
+
+    // 데이터 행
+    html += '<tbody>';
+    tableData.rows.forEach(row => {
+        html += '<tr>';
+        row.forEach(cell => {
+            const cellValue = cell === null || cell === undefined ? '' : String(cell);
+            html += `<td>${escapeHtml(cellValue)}</td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody>';
+
+    html += '</table>';
+    html += '</div>'; // excel-table-wrapper
+    html += '</div>'; // excel-preview-container
+
+    return html;
 }
 
 // 텍스트 영역 자동 크기 조절
