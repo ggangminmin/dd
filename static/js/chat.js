@@ -260,9 +260,9 @@ async function sendMessage() {
         // 타이핑 인디케이터 제거
         hideTypingIndicator();
 
-        // 이미지 URL이 있으면 사용자 메시지에 추가
-        if (data.image_urls && data.image_urls.length > 0) {
-            updateUserMessageWithImages(tempMessageId, data.image_urls);
+        // 첨부 파일이 있으면 사용자 메시지에 추가
+        if (data.attached_files && data.attached_files.length > 0) {
+            updateUserMessageWithFiles(tempMessageId, data.attached_files);
         }
 
         // 봇 응답 표시
@@ -323,26 +323,52 @@ function addUserMessage(message, imageUrls = [], messageId = null, scroll = true
 }
 
 /**
- * 사용자 메시지에 이미지 추가 (업로드 후)
+ * 사용자 메시지에 첨부 파일 추가 (업로드 후)
  */
-function updateUserMessageWithImages(messageId, imageUrls) {
+function updateUserMessageWithFiles(messageId, attachedFiles) {
     const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageDiv) return;
 
     const messageContent = messageDiv.querySelector('.message-content');
     const messageTime = messageDiv.querySelector('.message-time');
 
-    let imagesHtml = '<div class="message-images">';
-    imageUrls.forEach(url => {
-        imagesHtml += `<img src="${url}" alt="첨부 이미지" class="message-image">`;
-    });
-    imagesHtml += '</div>';
+    let filesHtml = '';
 
-    // 이미지를 메시지 내용 앞에 삽입
+    // 이미지 파일
+    const images = attachedFiles.filter(f => f.is_image);
+    if (images.length > 0) {
+        filesHtml += '<div class="message-images">';
+        images.forEach(file => {
+            filesHtml += `<img src="${file.url}" alt="${file.filename}" class="message-image">`;
+        });
+        filesHtml += '</div>';
+    }
+
+    // 일반 파일
+    const otherFiles = attachedFiles.filter(f => !f.is_image);
+    if (otherFiles.length > 0) {
+        filesHtml += '<div class="message-files">';
+        otherFiles.forEach(file => {
+            const fileIcon = getFileIcon(file.filename);
+            const fileSize = formatFileSize(file.size);
+            filesHtml += `
+                <a href="${file.url}" download="${file.filename}" class="file-card">
+                    <span class="file-card-icon">${fileIcon}</span>
+                    <div class="file-card-info">
+                        <div class="file-card-name">${escapeHtml(file.filename)}</div>
+                        <div class="file-card-size">${fileSize}</div>
+                    </div>
+                </a>
+            `;
+        });
+        filesHtml += '</div>';
+    }
+
+    // 파일을 메시지 내용 앞에 삽입
     if (messageContent) {
-        messageContent.insertAdjacentHTML('beforebegin', imagesHtml);
+        messageContent.insertAdjacentHTML('beforebegin', filesHtml);
     } else {
-        messageTime.insertAdjacentHTML('beforebegin', imagesHtml);
+        messageTime.insertAdjacentHTML('beforebegin', filesHtml);
     }
 
     scrollToBottom();

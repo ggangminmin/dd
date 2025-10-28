@@ -564,6 +564,68 @@ body {
     max-height: 200px;
 }
 
+/* 메시지 내 파일 카드 스타일 */
+.message-files {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.file-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.2s;
+    max-width: 300px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.file-card:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.file-card-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+}
+
+.file-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-card-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 4px;
+}
+
+.file-card-size {
+    font-size: 12px;
+    color: #999;
+}
+
+/* 사용자 메시지의 파일은 오른쪽 정렬 */
+.message.user .message-images,
+.message.user .message-files {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
 /* 반응형 디자인 */
 @media (max-width: 600px) {
     .container {
@@ -600,5 +662,9 @@ body {
     .message-images .message-image {
         max-width: 150px !important;
         max-height: 150px !important;
+    }
+
+    .file-card {
+        max-width: 100%;
     }
 }

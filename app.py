@@ -112,28 +112,41 @@ def chat():
     file_infos = []
     has_image = False
     image_urls = []
+    attached_files = []  # 모든 첨부 파일 정보
 
     for file in files:
         if file and file.filename:
             # 파일 읽기
             file_data = file.read()
 
-            # 이미지 파일인 경우 저장
-            if allowed_image_file(file.filename):
-                # 고유한 파일명 생성
-                ext = file.filename.rsplit('.', 1)[1].lower()
-                unique_filename = f"{uuid.uuid4()}.{ext}"
-                filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+            # 모든 파일 저장
+            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'bin'
+            unique_filename = f"{uuid.uuid4()}.{ext}"
+            filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
 
-                # 파일 저장
-                with open(filepath, 'wb') as f:
-                    f.write(file_data)
+            # 파일 저장
+            with open(filepath, 'wb') as f:
+                f.write(file_data)
 
-                # URL 생성
-                image_url = f"/static/uploads/{unique_filename}"
-                image_urls.append(image_url)
+            # URL 생성
+            file_url = f"/static/uploads/{unique_filename}"
 
-            # 파일 처리
+            # 파일 정보 저장
+            file_info_dict = {
+                'filename': file.filename,
+                'url': file_url,
+                'size': len(file_data),
+                'is_image': allowed_image_file(file.filename),
+                'extension': ext
+            }
+
+            # 이미지인 경우 image_urls에도 추가
+            if file_info_dict['is_image']:
+                image_urls.append(file_url)
+
+            attached_files.append(file_info_dict)
+
+            # 파일 처리 (텍스트 추출)
             result = FileProcessor.process_file(file_data, file.filename)
 
             if result['success']:
@@ -179,7 +192,8 @@ def chat():
         'sentiment': sentiment,
         'sentiment_info': sentiment_result,
         'files_processed': len(file_infos),
-        'image_urls': image_urls
+        'image_urls': image_urls,
+        'attached_files': attached_files  # 모든 첨부 파일 정보
     })
 
 
