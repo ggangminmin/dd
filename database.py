@@ -43,6 +43,20 @@ class Database:
             )
         ''')
 
+        # 파일 첨부 테이블
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS file_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER,
+                filename TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                file_size INTEGER,
+                file_info TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (message_id) REFERENCES chat_history (id)
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -75,6 +89,22 @@ class Database:
             INSERT INTO chat_history (user_id, message, is_user, sentiment)
             VALUES (?, ?, ?, ?)
         ''', (user_id, message, is_user, sentiment))
+
+        message_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return message_id
+
+    def save_file_attachment(self, message_id, filename, file_type, file_size, file_info):
+        """파일 첨부 정보 저장"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO file_attachments (message_id, filename, file_type, file_size, file_info)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (message_id, filename, file_type, file_size, file_info))
 
         conn.commit()
         conn.close()

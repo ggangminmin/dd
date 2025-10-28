@@ -391,6 +391,77 @@ body {
     background: #555;
 }
 
+/* 파일 첨부 관련 스타일 */
+.attach-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 5px 10px;
+    transition: transform 0.2s;
+}
+
+.attach-btn:hover {
+    transform: scale(1.1);
+}
+
+.file-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 10px 10px 0 0;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.file-preview:empty {
+    display: none;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.file-icon {
+    font-size: 20px;
+}
+
+.file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+.file-size {
+    color: #999;
+    font-size: 12px;
+}
+
+.file-remove {
+    background: none;
+    border: none;
+    color: #e74c3c;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 5px;
+    transition: color 0.2s;
+}
+
+.file-remove:hover {
+    color: #c0392b;
+}
+
 /* 반응형 디자인 */
 @media (max-width: 600px) {
     .container {
@@ -404,5 +475,9 @@ body {
 
     .login-box {
         margin: 20px;
+    }
+
+    .file-name {
+        max-width: 120px;
     }
 }

@@ -6,7 +6,9 @@ from flask import Flask, render_template, request, jsonify, session
 from config import Config
 from database import Database
 from sentiment_analyzer import SentimentAnalyzer
+from file_processor import FileProcessor
 import os
+import json
 
 # GPT API 연동 (선택적)
 try:
@@ -73,28 +75,71 @@ def register_user():
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """챗봇 대화 처리"""
-    data = request.json
-    user_message = data.get('message', '').strip()
     user_id = session.get('user_id')
 
     if not user_id:
         return jsonify({'error': '로그인이 필요합니다.'}), 401
 
-    if not user_message:
-        return jsonify({'error': '메시지를 입력해주세요.'}), 400
+    # JSON 또는 multipart/form-data 처리
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        user_message = request.form.get('message', '').strip()
+        files = request.files.getlist('files')
+    else:
+        data = request.json
+        user_message = data.get('message', '').strip()
+        files = []
+
+    if not user_message and not files:
+        return jsonify({'error': '메시지 또는 파일을 입력해주세요.'}), 400
 
     # 감정 분석
-    sentiment_result = sentiment_analyzer.analyze(user_message)
+    sentiment_result = sentiment_analyzer.analyze(user_message) if user_message else {'sentiment': 'neutral'}
     sentiment = sentiment_result['sentiment']
 
+    # 파일 처리
+    file_contents = []
+    file_infos = []
+    has_image = False
+
+    for file in files:
+        if file and file.filename:
+            # 파일 읽기
+            file_data = file.read()
+
+            # 파일 처리
+            result = FileProcessor.process_file(file_data, file.filename)
+
+            if result['success']:
+                file_contents.append(result['text'])
+                file_infos.append(result['info'])
+                if result.get('has_image'):
+                    has_image = True
+            else:
+                return jsonify({'error': result['error']}), 400
+
+    # 파일 내용을 메시지에 추가
+    full_message = user_message
+    if file_contents:
+        full_message += "\n\n[첨부된 파일 내용]\n" + "\n\n".join(file_contents)
+
     # 사용자 메시지 저장
-    db.save_message(user_id, user_message, is_user=True, sentiment=sentiment)
+    message_id = db.save_message(user_id, user_message if user_message else "[파일 첨부]", is_user=True, sentiment=sentiment)
+
+    # 파일 정보 저장
+    for file_info in file_infos:
+        db.save_file_attachment(
+            message_id,
+            file_info['filename'],
+            file_info['type'],
+            file_info.get('size', 0),
+            json.dumps(file_info)
+        )
 
     # 봇 응답 생성
     if USE_GPT:
-        bot_response = generate_gpt_response(user_id, user_message, sentiment)
+        bot_response = generate_gpt_response(user_id, full_message, sentiment, has_image, file_infos if has_image else None)
     else:
-        bot_response = generate_rule_based_response(user_message, sentiment)
+        bot_response = generate_rule_based_response(full_message, sentiment)
 
     # 감정에 맞춰 응답 조절
     bot_response = sentiment_analyzer.adjust_response(bot_response, sentiment)
@@ -105,7 +150,8 @@ def chat():
     return jsonify({
         'response': bot_response,
         'sentiment': sentiment,
-        'sentiment_info': sentiment_result
+        'sentiment_info': sentiment_result,
+        'files_processed': len(file_infos)
     })
 
 
@@ -139,9 +185,9 @@ def generate_rule_based_response(message, sentiment):
     return "문의 내용을 잘 이해했습니다. 더 구체적으로 설명해주시면 더 정확한 도움을 드릴 수 있습니다."
 
 
-def generate_gpt_response(user_id, message, sentiment):
+def generate_gpt_response(user_id, message, sentiment, has_image=False, image_infos=None):
     """
-    GPT API를 사용한 응답 생성
+    GPT API를 사용한 응답 생성 (이미지 지원)
     """
     if not openai_client:
         return generate_rule_based_response(message, sentiment)
@@ -160,6 +206,7 @@ def generate_gpt_response(user_id, message, sentiment):
 2. 사용자의 감정을 고려하여 적절한 어조로 응답하세요.
 3. 구체적이고 실용적인 해결책을 제시하세요.
 4. 이전 대화 내용을 참고하여 맥락을 유지하세요.
+5. 첨부된 파일이 있다면 그 내용을 분석하여 답변하세요.
 """
 
     # 대화 이력을 메시지 형식으로 변환
@@ -169,8 +216,36 @@ def generate_gpt_response(user_id, message, sentiment):
         role = "user" if msg['is_user'] else "assistant"
         messages.append({"role": role, "content": msg['message']})
 
-    # 현재 메시지 추가
-    messages.append({"role": "user", "content": message})
+    # 현재 메시지 추가 (이미지가 있으면 GPT-4 Vision 사용)
+    if has_image and image_infos:
+        # GPT-4 Vision을 사용하여 이미지 분석
+        content = [{"type": "text", "text": message}]
+
+        for img_info in image_infos:
+            if 'base64' in img_info:
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{img_info['base64']}"
+                    }
+                })
+
+        messages.append({"role": "user", "content": content})
+
+        try:
+            # GPT-4 Vision API 호출
+            response = openai_client.chat.completions.create(
+                model="gpt-4-vision-preview",
+                messages=messages,
+                max_tokens=300
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"GPT-4 Vision API 오류: {e}")
+            # Vision 실패 시 일반 GPT-3.5로 폴백
+            messages[-1] = {"role": "user", "content": message}
+    else:
+        messages.append({"role": "user", "content": message})
 
     try:
         # GPT API 호출

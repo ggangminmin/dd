@@ -3,6 +3,7 @@
  */
 
 let currentUser = null;
+let selectedFiles = [];
 
 // 페이지 로드 시 실행
 document.addEventListener('DOMContentLoaded', function() {
@@ -105,20 +106,82 @@ function switchScreen(screenId) {
 }
 
 /**
+ * 파일 선택 처리
+ */
+function handleFileSelect(event) {
+    const files = Array.from(event.target.files);
+    selectedFiles = files;
+
+    // 파일 미리보기 표시
+    const preview = document.getElementById('file-preview');
+    preview.innerHTML = '';
+
+    files.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+
+        const fileIcon = getFileIcon(file.name);
+        const fileSize = formatFileSize(file.size);
+
+        fileItem.innerHTML = `
+            <span class="file-icon">${fileIcon}</span>
+            <span class="file-name">${file.name}</span>
+            <span class="file-size">${fileSize}</span>
+            <button class="file-remove" onclick="removeFile(${index})">&times;</button>
+        `;
+
+        preview.appendChild(fileItem);
+    });
+}
+
+/**
+ * 파일 제거
+ */
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+
+    // 파일 input 초기화
+    const fileInput = document.getElementById('file-input');
+    fileInput.value = '';
+
+    // 미리보기 다시 렌더링
+    const preview = document.getElementById('file-preview');
+    preview.innerHTML = '';
+
+    selectedFiles.forEach((file, idx) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+
+        const fileIcon = getFileIcon(file.name);
+        const fileSize = formatFileSize(file.size);
+
+        fileItem.innerHTML = `
+            <span class="file-icon">${fileIcon}</span>
+            <span class="file-name">${file.name}</span>
+            <span class="file-size">${fileSize}</span>
+            <button class="file-remove" onclick="removeFile(${idx})">&times;</button>
+        `;
+
+        preview.appendChild(fileItem);
+    });
+}
+
+/**
  * 메시지 전송
  */
 async function sendMessage() {
     const input = document.getElementById('message-input');
     const message = input.value.trim();
 
-    if (!message) return;
+    if (!message && selectedFiles.length === 0) return;
 
     // 입력창 비우기
     input.value = '';
     input.style.height = 'auto';
 
     // 사용자 메시지 표시
-    addUserMessage(message);
+    const displayMessage = message || '[파일 첨부]';
+    addUserMessage(displayMessage, selectedFiles.length > 0);
 
     // 전송 버튼 비활성화
     const sendBtn = document.getElementById('send-btn');
@@ -128,12 +191,17 @@ async function sendMessage() {
     showTypingIndicator();
 
     try {
+        // FormData로 파일과 메시지 전송
+        const formData = new FormData();
+        formData.append('message', message);
+
+        selectedFiles.forEach(file => {
+            formData.append('files', file);
+        });
+
         const response = await fetch('/api/chat', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message })
+            body: formData
         });
 
         if (!response.ok) {
@@ -152,6 +220,11 @@ async function sendMessage() {
         if (data.sentiment_info) {
             showSentimentInfo(data.sentiment_info);
         }
+
+        // 파일 미리보기 초기화
+        selectedFiles = [];
+        document.getElementById('file-preview').innerHTML = '';
+        document.getElementById('file-input').value = '';
 
     } catch (error) {
         console.error('Send message error:', error);
@@ -348,6 +421,32 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * 파일 아이콘 가져오기
+ */
+function getFileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
+        'pdf': '📄', 'docx': '📝', 'txt': '📃',
+        'xlsx': '📊', 'csv': '📈',
+        'json': '📋', 'xml': '📋',
+        'zip': '📦'
+    };
+    return iconMap[ext] || '📎';
+}
+
+/**
+ * 파일 크기 포맷
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
 // 텍스트 영역 자동 크기 조절
