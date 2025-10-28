@@ -412,7 +412,7 @@ body {
     padding: 10px;
     background: #f8f9fa;
     border-radius: 10px 10px 0 0;
-    max-height: 150px;
+    max-height: 200px;
     overflow-y: auto;
 }
 
@@ -429,6 +429,79 @@ body {
     border: 1px solid #e0e0e0;
     border-radius: 8px;
     font-size: 14px;
+}
+
+/* 이미지 미리보기 스타일 */
+.file-item.image-preview {
+    position: relative;
+    padding: 0;
+    width: 150px;
+    height: 150px;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.file-item.image-preview:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.preview-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.image-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+    color: white;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.image-name {
+    font-size: 12px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.image-size {
+    font-size: 10px;
+    opacity: 0.9;
+}
+
+.image-remove {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(231, 76, 60, 0.9);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    opacity: 0.8;
+    transition: opacity 0.2s, background 0.2s;
+}
+
+.image-remove:hover {
+    opacity: 1;
+    background: rgba(192, 57, 43, 1);
 }
 
 .file-icon {
@@ -479,5 +552,14 @@ body {
 
     .file-name {
         max-width: 120px;
+    }
+
+    .file-item.image-preview {
+        width: 100px;
+        height: 100px;
+    }
+
+    .file-preview {
+        max-height: 150px;
     }
 }

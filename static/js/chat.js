@@ -118,17 +118,40 @@ function handleFileSelect(event) {
 
     files.forEach((file, index) => {
         const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
 
-        const fileIcon = getFileIcon(file.name);
-        const fileSize = formatFileSize(file.size);
+        // 이미지 파일 확인
+        const isImage = file.type.startsWith('image/');
 
-        fileItem.innerHTML = `
-            <span class="file-icon">${fileIcon}</span>
-            <span class="file-name">${file.name}</span>
-            <span class="file-size">${fileSize}</span>
-            <button class="file-remove" onclick="removeFile(${index})">&times;</button>
-        `;
+        if (isImage) {
+            // 이미지 미리보기
+            fileItem.className = 'file-item image-preview';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fileSize = formatFileSize(file.size);
+                fileItem.innerHTML = `
+                    <img src="${e.target.result}" alt="${file.name}" class="preview-image">
+                    <div class="image-overlay">
+                        <span class="image-name">${file.name}</span>
+                        <span class="image-size">${fileSize}</span>
+                    </div>
+                    <button class="file-remove image-remove" onclick="removeFile(${index})" title="삭제">&times;</button>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            // 일반 파일
+            fileItem.className = 'file-item';
+            const fileIcon = getFileIcon(file.name);
+            const fileSize = formatFileSize(file.size);
+
+            fileItem.innerHTML = `
+                <span class="file-icon">${fileIcon}</span>
+                <span class="file-name">${file.name}</span>
+                <span class="file-size">${fileSize}</span>
+                <button class="file-remove" onclick="removeFile(${index})">&times;</button>
+            `;
+        }
 
         preview.appendChild(fileItem);
     });
@@ -150,17 +173,40 @@ function removeFile(index) {
 
     selectedFiles.forEach((file, idx) => {
         const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
 
-        const fileIcon = getFileIcon(file.name);
-        const fileSize = formatFileSize(file.size);
+        // 이미지 파일 확인
+        const isImage = file.type.startsWith('image/');
 
-        fileItem.innerHTML = `
-            <span class="file-icon">${fileIcon}</span>
-            <span class="file-name">${file.name}</span>
-            <span class="file-size">${fileSize}</span>
-            <button class="file-remove" onclick="removeFile(${idx})">&times;</button>
-        `;
+        if (isImage) {
+            // 이미지 미리보기
+            fileItem.className = 'file-item image-preview';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fileSize = formatFileSize(file.size);
+                fileItem.innerHTML = `
+                    <img src="${e.target.result}" alt="${file.name}" class="preview-image">
+                    <div class="image-overlay">
+                        <span class="image-name">${file.name}</span>
+                        <span class="image-size">${fileSize}</span>
+                    </div>
+                    <button class="file-remove image-remove" onclick="removeFile(${idx})" title="삭제">&times;</button>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            // 일반 파일
+            fileItem.className = 'file-item';
+            const fileIcon = getFileIcon(file.name);
+            const fileSize = formatFileSize(file.size);
+
+            fileItem.innerHTML = `
+                <span class="file-icon">${fileIcon}</span>
+                <span class="file-name">${file.name}</span>
+                <span class="file-size">${fileSize}</span>
+                <button class="file-remove" onclick="removeFile(${idx})">&times;</button>
+            `;
+        }
 
         preview.appendChild(fileItem);
     });
