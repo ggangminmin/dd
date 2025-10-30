@@ -52,6 +52,7 @@ class Database:
                 file_type TEXT NOT NULL,
                 file_size INTEGER,
                 file_info TEXT,
+                file_url TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (message_id) REFERENCES chat_history (id)
             )
@@ -96,21 +97,21 @@ class Database:
 
         return message_id
 
-    def save_file_attachment(self, message_id, filename, file_type, file_size, file_info):
+    def save_file_attachment(self, message_id, filename, file_type, file_size, file_info, file_url=None):
         """파일 첨부 정보 저장"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
-            INSERT INTO file_attachments (message_id, filename, file_type, file_size, file_info)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (message_id, filename, file_type, file_size, file_info))
+            INSERT INTO file_attachments (message_id, filename, file_type, file_size, file_info, file_url)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (message_id, filename, file_type, file_size, file_info, file_url))
 
         conn.commit()
         conn.close()
 
     def get_user_history(self, user_id, limit=None):
-        """사용자의 대화 이력 조회"""
+        """사용자의 대화 이력 조회 (첨부 파일 정보 포함)"""
         if limit is None:
             limit = Config.MAX_HISTORY_LENGTH
 
@@ -118,7 +119,7 @@ class Database:
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT message, is_user, sentiment, timestamp
+            SELECT id, message, is_user, sentiment, timestamp
             FROM chat_history
             WHERE user_id = ?
             ORDER BY timestamp DESC
@@ -126,10 +127,41 @@ class Database:
         ''', (user_id, limit))
 
         history = cursor.fetchall()
+
+        # 각 메시지에 첨부 파일 정보 추가
+        result = []
+        for row in history:
+            message_dict = dict(row)
+            message_id = message_dict['id']
+
+            # 첨부 파일 조회
+            cursor.execute('''
+                SELECT filename, file_type, file_size, file_info, file_url
+                FROM file_attachments
+                WHERE message_id = ?
+            ''', (message_id,))
+
+            attachments = cursor.fetchall()
+            if attachments:
+                import json
+                message_dict['attachments'] = []
+                for att in attachments:
+                    att_dict = dict(att)
+                    # file_info JSON 파싱
+                    if att_dict.get('file_info'):
+                        try:
+                            file_info = json.loads(att_dict['file_info'])
+                            att_dict['parsed_info'] = file_info
+                        except:
+                            pass
+                    message_dict['attachments'].append(att_dict)
+
+            result.append(message_dict)
+
         conn.close()
 
         # 최신 순서를 오래된 순서로 변경
-        return list(reversed([dict(row) for row in history]))
+        return list(reversed(result))
 
     def get_user_stats(self, user_id):
         """사용자 통계 정보"""

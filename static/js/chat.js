@@ -157,7 +157,17 @@ async function loginUser() {
         if (data.history && data.history.length > 0) {
             data.history.forEach(msg => {
                 if (msg.is_user) {
-                    addUserMessage(msg.message, false);
+                    // 사용자 메시지 표시
+                    const tempId = Date.now() + Math.random();
+
+                    // 첨부 파일이 있는 경우와 없는 경우를 구분하여 처리
+                    if (msg.attached_files && msg.attached_files.length > 0) {
+                        // 메시지가 있으면 메시지 먼저 추가, 없으면 빈 메시지로 추가
+                        addUserMessageWithHistory(msg.message || '', msg.attached_files, tempId, false);
+                    } else {
+                        // 첨부 파일이 없으면 일반 메시지만 표시
+                        addUserMessage(msg.message, [], tempId, false);
+                    }
                 } else {
                     addBotMessage(msg.message, false);
                 }
@@ -404,6 +414,76 @@ function addUserMessage(message, imageUrls = [], messageId = null, scroll = true
         <div class="message-time">${getCurrentTime()}</div>
     `;
 
+    messagesDiv.appendChild(messageDiv);
+
+    if (scroll) {
+        scrollToBottom();
+    }
+}
+
+/**
+ * 사용자 메시지 추가 (이전 대화 이력용 - 첨부 파일 포함)
+ */
+function addUserMessageWithHistory(message, attachedFiles, messageId, scroll = true) {
+    const messagesDiv = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message user';
+
+    if (messageId) {
+        messageDiv.setAttribute('data-message-id', messageId);
+    }
+
+    let contentHtml = '';
+
+    // 이미지 파일
+    const images = attachedFiles.filter(f => f.is_image);
+    if (images.length > 0) {
+        contentHtml += '<div class="message-images">';
+        images.forEach(file => {
+            contentHtml += `<img src="${file.url}" alt="${file.filename}" class="message-image">`;
+        });
+        contentHtml += '</div>';
+    }
+
+    // 일반 파일
+    const otherFiles = attachedFiles.filter(f => !f.is_image);
+    if (otherFiles.length > 0) {
+        contentHtml += '<div class="message-files">';
+        otherFiles.forEach(file => {
+            // Excel/CSV 표 미리보기
+            if (file.table_data) {
+                contentHtml += renderTablePreview(file);
+            }
+            // Word/Text 파일 미리보기
+            else if (file.text_preview) {
+                contentHtml += renderTextPreview(file);
+            }
+            else {
+                // 파일 카드 (다운로드용)
+                const fileIcon = getFileIcon(file.filename);
+                const fileSize = formatFileSize(file.size);
+                contentHtml += `
+                    <a href="${file.url}" download="${file.filename}" class="file-card">
+                        <span class="file-card-icon">${fileIcon}</span>
+                        <div class="file-card-info">
+                            <div class="file-card-name">${escapeHtml(file.filename)}</div>
+                            <div class="file-card-size">${fileSize}</div>
+                        </div>
+                    </a>
+                `;
+            }
+        });
+        contentHtml += '</div>';
+    }
+
+    // 메시지 텍스트 (있으면 표시)
+    if (message && message.trim()) {
+        contentHtml += `<div class="message-content">${escapeHtml(message)}</div>`;
+    }
+
+    contentHtml += `<div class="message-time">${getCurrentTime()}</div>`;
+
+    messageDiv.innerHTML = contentHtml;
     messagesDiv.appendChild(messageDiv);
 
     if (scroll) {

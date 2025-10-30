@@ -64,8 +64,41 @@ def register_user():
     session['user_id'] = user_id
     session['username'] = username
 
-    # 이전 대화 이력 조회
+    # 이전 대화 이력 조회 (첨부 파일 정보 포함)
     history = db.get_user_history(user_id)
+
+    # 첨부 파일 정보 처리 (URL 및 미리보기 데이터 추가)
+    for msg in history:
+        if 'attachments' in msg and msg['attachments']:
+            msg['attached_files'] = []
+            for att in msg['attachments']:
+                parsed_info = att.get('parsed_info', {})
+                file_ext = parsed_info.get('type', 'unknown')
+                filename = att['filename']
+
+                # 파일 정보 구성
+                file_info_dict = {
+                    'filename': filename,
+                    'size': att.get('file_size', 0),
+                    'extension': file_ext,
+                    'is_image': file_ext == 'image' or file_ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']
+                }
+
+                # 저장된 URL 사용
+                if att.get('file_url'):
+                    file_info_dict['url'] = att['file_url']
+
+                # 표 데이터가 있으면 추가
+                if 'table_data' in parsed_info:
+                    file_info_dict['table_data'] = parsed_info['table_data']
+
+                # 텍스트 미리보기 추가
+                if 'text' in parsed_info and file_ext in ['docx', 'txt', 'pdf']:
+                    preview_text = parsed_info['text'][:500] if len(parsed_info['text']) > 500 else parsed_info['text']
+                    file_info_dict['text_preview'] = preview_text
+
+                msg['attached_files'].append(file_info_dict)
+
     stats = db.get_user_stats(user_id)
 
     # 환영 메시지
@@ -173,16 +206,22 @@ def chat():
         full_message += "\n\n[첨부된 파일 내용]\n" + "\n\n".join(file_contents)
 
     # 사용자 메시지 저장
-    message_id = db.save_message(user_id, user_message if user_message else "[파일 첨부]", is_user=True, sentiment=sentiment)
+    message_id = db.save_message(user_id, user_message if user_message else "", is_user=True, sentiment=sentiment)
 
-    # 파일 정보 저장
-    for file_info in file_infos:
+    # 파일 정보 저장 (URL 포함)
+    for i, file_info in enumerate(file_infos):
+        # 해당 파일의 URL 찾기
+        file_url = None
+        if i < len(attached_files):
+            file_url = attached_files[i].get('url')
+
         db.save_file_attachment(
             message_id,
             file_info['filename'],
             file_info['type'],
             file_info.get('size', 0),
-            json.dumps(file_info)
+            json.dumps(file_info),
+            file_url
         )
 
     # 봇 응답 생성
