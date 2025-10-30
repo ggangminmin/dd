@@ -17,7 +17,96 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         usernameInput.focus();
     }
+
+    // 드래그 앤 드롭 설정
+    setupDragAndDrop();
 });
+
+/**
+ * 드래그 앤 드롭 기능 설정
+ */
+function setupDragAndDrop() {
+    const chatMessages = document.getElementById('chat-messages');
+    const inputContainer = document.querySelector('.chat-input-container');
+
+    if (!chatMessages || !inputContainer) return;
+
+    // 드래그 오버레이 생성
+    const overlay = document.createElement('div');
+    overlay.id = 'drag-overlay';
+    overlay.innerHTML = '<div class="drag-message">📎 파일을 여기에 놓으세요</div>';
+    overlay.style.display = 'none';
+    document.body.appendChild(overlay);
+
+    let dragCounter = 0;
+
+    // 채팅 화면 전체에 드래그 앤 드롭 이벤트 등록
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    // 드래그 진입
+    document.body.addEventListener('dragenter', function(e) {
+        dragCounter++;
+        if (dragCounter === 1 && document.getElementById('chat-screen').classList.contains('active')) {
+            overlay.style.display = 'flex';
+        }
+    });
+
+    // 드래그 나가기
+    document.body.addEventListener('dragleave', function(e) {
+        dragCounter--;
+        if (dragCounter === 0) {
+            overlay.style.display = 'none';
+        }
+    });
+
+    // 드롭
+    document.body.addEventListener('drop', function(e) {
+        dragCounter = 0;
+        overlay.style.display = 'none';
+
+        if (!document.getElementById('chat-screen').classList.contains('active')) {
+            return;
+        }
+
+        const dt = e.dataTransfer;
+        const files = dt.files;
+
+        if (files.length > 0) {
+            handleDroppedFiles(files);
+        }
+    });
+}
+
+/**
+ * 드롭된 파일 처리
+ */
+function handleDroppedFiles(files) {
+    const fileInput = document.getElementById('file-input');
+    const dataTransfer = new DataTransfer();
+
+    // 기존 선택된 파일 유지
+    selectedFiles.forEach(file => {
+        dataTransfer.items.add(file);
+    });
+
+    // 새로 드롭된 파일 추가
+    Array.from(files).forEach(file => {
+        dataTransfer.items.add(file);
+    });
+
+    fileInput.files = dataTransfer.files;
+
+    // 파일 선택 이벤트 트리거
+    const event = new Event('change', { bubbles: true });
+    fileInput.dispatchEvent(event);
+}
 
 /**
  * 사용자 로그인
@@ -353,19 +442,24 @@ function updateUserMessageWithFiles(messageId, attachedFiles) {
             if (file.table_data) {
                 filesHtml += renderTablePreview(file);
             }
-
-            // 파일 카드 (다운로드용)
-            const fileIcon = getFileIcon(file.filename);
-            const fileSize = formatFileSize(file.size);
-            filesHtml += `
-                <a href="${file.url}" download="${file.filename}" class="file-card">
-                    <span class="file-card-icon">${fileIcon}</span>
-                    <div class="file-card-info">
-                        <div class="file-card-name">${escapeHtml(file.filename)}</div>
-                        <div class="file-card-size">${fileSize}</div>
-                    </div>
-                </a>
-            `;
+            // Word/Text 파일 미리보기
+            else if (file.text_preview) {
+                filesHtml += renderTextPreview(file);
+            }
+            else {
+                // 파일 카드 (다운로드용) - 미리보기가 없을 때만 표시
+                const fileIcon = getFileIcon(file.filename);
+                const fileSize = formatFileSize(file.size);
+                filesHtml += `
+                    <a href="${file.url}" download="${file.filename}" class="file-card">
+                        <span class="file-card-icon">${fileIcon}</span>
+                        <div class="file-card-info">
+                            <div class="file-card-name">${escapeHtml(file.filename)}</div>
+                            <div class="file-card-size">${fileSize}</div>
+                        </div>
+                    </a>
+                `;
+            }
         });
         filesHtml += '</div>';
     }
@@ -571,6 +665,44 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+/**
+ * Word/Text 파일 미리보기 렌더링
+ */
+function renderTextPreview(file) {
+    const textContent = file.text_preview || '';
+    const maxLength = 500; // 최대 표시 길이
+    const truncated = textContent.length > maxLength;
+    const displayText = truncated ? textContent.substring(0, maxLength) + '...' : textContent;
+
+    const fileIcon = getFileIcon(file.filename);
+    const fileSize = formatFileSize(file.size);
+
+    let html = '<div class="text-preview-container">';
+
+    // 헤더
+    html += '<div class="text-preview-header">';
+    html += `<span class="text-preview-icon">${fileIcon}</span>`;
+    html += `<div class="text-preview-title">`;
+    html += `<div class="text-preview-filename">${escapeHtml(file.filename)}</div>`;
+    html += `<div class="text-preview-size">${fileSize}</div>`;
+    html += `</div>`;
+    html += `<a href="${file.url}" download="${file.filename}" class="text-preview-download" title="다운로드">⬇</a>`;
+    html += '</div>';
+
+    // 내용
+    html += '<div class="text-preview-content">';
+    html += escapeHtml(displayText).replace(/\n/g, '<br>');
+    html += '</div>';
+
+    if (truncated) {
+        html += '<div class="text-preview-more">더 보려면 파일을 다운로드하세요</div>';
+    }
+
+    html += '</div>';
+
+    return html;
 }
 
 /**

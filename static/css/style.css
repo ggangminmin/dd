@@ -16,8 +16,21 @@ body {
 
 .container {
     width: 100%;
+    max-width: 100%;
+    margin: 0;
+}
+
+/* 로그인 화면일 때 컨테이너 - 중앙 정렬 */
+#login-screen.active ~ #chat-screen,
+.container:has(#login-screen.active) {
     max-width: 800px;
     margin: 20px;
+}
+
+/* 채팅 화면일 때 컨테이너 - 전체 화면 */
+.container:has(#chat-screen.active) {
+    max-width: 100%;
+    margin: 0;
 }
 
 /* 화면 전환 */
@@ -101,12 +114,12 @@ body {
 /* 채팅 화면 */
 .chat-container {
     background: white;
-    border-radius: 20px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    border-radius: 0;
+    box-shadow: none;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: 600px;
+    height: 100vh;
 }
 
 /* 헤더 */
@@ -163,8 +176,10 @@ body {
 }
 
 .message {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
     animation: slideIn 0.3s ease-out;
+    display: flex;
+    flex-direction: column;
 }
 
 @keyframes slideIn {
@@ -174,15 +189,16 @@ body {
 
 .message-content {
     display: inline-block;
-    max-width: 70%;
-    padding: 12px 16px;
-    border-radius: 18px;
-    line-height: 1.4;
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    line-height: 1.5;
     word-wrap: break-word;
+    font-size: 14px;
 }
 
 .message.user {
-    text-align: right;
+    align-items: flex-end;
 }
 
 .message.user .message-content {
@@ -190,16 +206,21 @@ body {
     color: white;
 }
 
+.message.bot {
+    align-items: flex-start;
+}
+
 .message.bot .message-content {
-    background: white;
+    background: #f0f0f0;
     color: #333;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    box-shadow: none;
 }
 
 .message-time {
-    font-size: 11px;
+    font-size: 10px;
     color: #999;
-    margin-top: 5px;
+    margin-top: 4px;
+    opacity: 0.7;
 }
 
 .sentiment-badge {
@@ -408,11 +429,11 @@ body {
 .file-preview {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px;
+    gap: 8px;
+    padding: 8px 12px;
     background: #f8f9fa;
-    border-radius: 10px 10px 0 0;
-    max-height: 200px;
+    border-radius: 8px 8px 0 0;
+    max-height: 120px;
     overflow-y: auto;
 }
 
@@ -423,23 +444,24 @@ body {
 .file-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 4px 10px;
     background: white;
     border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 14px;
+    border-radius: 16px;
+    font-size: 13px;
+    max-width: 200px;
 }
 
-/* 이미지 미리보기 스타일 */
+/* 이미지 미리보기 스타일 - ChatGPT 스타일로 축소 */
 .file-item.image-preview {
     position: relative;
     padding: 0;
-    width: 150px;
-    height: 150px;
+    width: 80px;
+    height: 80px;
     overflow: hidden;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -469,7 +491,7 @@ body {
 }
 
 .image-name {
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -477,8 +499,8 @@ body {
 }
 
 .image-size {
-    font-size: 10px;
-    opacity: 0.9;
+    font-size: 9px;
+    opacity: 0.8;
 }
 
 .image-remove {
@@ -505,7 +527,7 @@ body {
 }
 
 .file-icon {
-    font-size: 20px;
+    font-size: 16px;
 }
 
 .file-name {
@@ -513,12 +535,12 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 200px;
+    max-width: 150px;
 }
 
 .file-size {
     color: #999;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .file-remove {
@@ -535,33 +557,32 @@ body {
     color: #c0392b;
 }
 
-/* 메시지 내 이미지 스타일 */
+/* 메시지 내 이미지 스타일 - ChatGPT 스타일 */
 .message-images {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 8px;
 }
 
 .message-image {
-    max-width: 300px;
-    max-height: 300px;
-    border-radius: 12px;
+    max-width: 250px;
+    max-height: 250px;
+    border-radius: 8px;
     object-fit: cover;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .message-image:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0.9;
 }
 
 /* 여러 이미지가 있을 때 */
 .message-images .message-image {
-    max-width: 200px;
-    max-height: 200px;
+    max-width: 180px;
+    max-height: 180px;
 }
 
 /* 메시지 내 파일 카드 스타일 */
@@ -575,22 +596,21 @@ body {
 .file-card {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.95);
+    gap: 10px;
+    padding: 10px 12px;
+    background: #f8f9fa;
     border: 1px solid #e0e0e0;
-    border-radius: 12px;
+    border-radius: 8px;
     text-decoration: none;
     color: inherit;
     transition: all 0.2s;
-    max-width: 300px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    max-width: 280px;
+    box-shadow: none;
 }
 
 .file-card:hover {
-    background: rgba(255, 255, 255, 1);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    background: #e8e9ea;
+    border-color: #667eea;
 }
 
 .file-card-icon {
@@ -618,22 +638,26 @@ body {
     color: #999;
 }
 
-/* 사용자 메시지의 파일은 오른쪽 정렬 */
+/* 파일은 메시지 정렬 유지 */
 .message.user .message-images,
 .message.user .message-files {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
+    align-self: flex-end;
 }
 
-/* Excel/CSV 표 미리보기 스타일 */
+.message.bot .message-images,
+.message.bot .message-files {
+    align-self: flex-start;
+}
+
+/* Excel/CSV 표 미리보기 스타일 - ChatGPT 스타일 개선 */
 .excel-preview-container {
-    margin-bottom: 12px;
-    background: white;
-    border-radius: 12px;
+    margin-bottom: 10px;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
     padding: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    max-width: 600px;
+    max-width: 100%;
+    box-shadow: none;
 }
 
 .excel-filename {
@@ -651,10 +675,11 @@ body {
 
 .excel-table-wrapper {
     overflow-x: auto;
-    max-height: 400px;
+    max-height: 300px;
     overflow-y: auto;
     border: 1px solid #e0e0e0;
-    border-radius: 8px;
+    border-radius: 6px;
+    background: white;
 }
 
 .excel-table {
@@ -695,7 +720,134 @@ body {
 
 /* 사용자 메시지의 표는 오른쪽 정렬 */
 .message.user .excel-preview-container {
-    margin-left: auto;
+    align-self: flex-end;
+    max-width: 80%;
+}
+
+.message.bot .excel-preview-container {
+    align-self: flex-start;
+    max-width: 80%;
+}
+
+/* Word/Text 파일 미리보기 스타일 */
+.text-preview-container {
+    margin-bottom: 10px;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 100%;
+}
+
+.text-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: white;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.text-preview-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.text-preview-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.text-preview-filename {
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.text-preview-size {
+    font-size: 12px;
+    color: #999;
+    margin-top: 2px;
+}
+
+.text-preview-download {
+    background: #667eea;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    font-size: 16px;
+    transition: background 0.2s;
+}
+
+.text-preview-download:hover {
+    background: #5568d3;
+}
+
+.text-preview-content {
+    padding: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #333;
+    background: white;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.text-preview-more {
+    padding: 8px 12px;
+    text-align: center;
+    font-size: 12px;
+    color: #667eea;
+    background: #f0f0f0;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* 사용자 메시지의 텍스트 미리보기 */
+.message.user .text-preview-container {
+    align-self: flex-end;
+    max-width: 80%;
+}
+
+.message.bot .text-preview-container {
+    align-self: flex-start;
+    max-width: 80%;
+}
+
+/* 드래그 앤 드롭 오버레이 */
+#drag-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(102, 126, 234, 0.95);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.drag-message {
+    background: white;
+    padding: 40px 60px;
+    border-radius: 20px;
+    font-size: 24px;
+    font-weight: bold;
+    color: #667eea;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    border: 3px dashed #667eea;
 }
 
 /* 반응형 디자인 */

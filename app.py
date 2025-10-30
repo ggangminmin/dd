@@ -140,7 +140,7 @@ def chat():
                 if result.get('has_image'):
                     has_image = True
 
-                # 파일 정보 저장 (table_data 포함)
+                # 파일 정보 저장 (table_data, text_preview 포함)
                 file_info_dict = {
                     'filename': file.filename,
                     'url': file_url,
@@ -152,6 +152,12 @@ def chat():
                 # 표 데이터가 있으면 추가 (Excel, CSV)
                 if 'table_data' in result:
                     file_info_dict['table_data'] = result['table_data']
+
+                # 텍스트 미리보기 추가 (Word, TXT, PDF 등)
+                if 'text' in result and result['info']['type'] in ['docx', 'txt', 'pdf']:
+                    # 최대 500자로 제한
+                    preview_text = result['text'][:500] if len(result['text']) > 500 else result['text']
+                    file_info_dict['text_preview'] = preview_text
 
                 # 이미지인 경우 image_urls에도 추가
                 if file_info_dict['is_image']:
