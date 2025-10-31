@@ -22,8 +22,14 @@ except ImportError:
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# 업로드 폴더 설정
-UPLOAD_FOLDER = os.path.join(app.static_folder, 'uploads')
+# 업로드 폴더 설정 (서버리스 환경 대응)
+IS_VERCEL = os.environ.get('IS_VERCEL', 'false') == 'true'
+if IS_VERCEL:
+    # Vercel 서버리스 환경에서는 /tmp 디렉토리 사용
+    UPLOAD_FOLDER = '/tmp/uploads'
+else:
+    UPLOAD_FOLDER = os.path.join(app.static_folder, 'uploads')
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
@@ -161,8 +167,13 @@ def chat():
             with open(filepath, 'wb') as f:
                 f.write(file_data)
 
-            # URL 생성
-            file_url = f"/static/uploads/{unique_filename}"
+            # URL 생성 (서버리스 환경 대응)
+            if IS_VERCEL:
+                # Vercel 환경에서는 /tmp가 휘발성이므로 URL 생성하지 않음
+                # 실제 운영 환경에서는 S3, Cloudinary 등의 클라우드 스토리지 사용 권장
+                file_url = None  # 임시: 파일 URL 사용 불가
+            else:
+                file_url = f"/static/uploads/{unique_filename}"
 
             # 파일 처리 (텍스트 추출)
             result = FileProcessor.process_file(file_data, file.filename)
@@ -373,13 +384,17 @@ def get_history():
 
 
 if __name__ == '__main__':
-    print(f"""
-    ========================================
-    고객지원 챗봇 서버 시작
-    ========================================
-    - GPT API 사용: {USE_GPT}
-    - 데이터베이스: {Config.DATABASE_PATH}
-    - 서버 주소: http://localhost:5000
-    ========================================
-    """)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # 로컬 개발 환경에서만 실행
+    if not IS_VERCEL:
+        print(f"""
+        ========================================
+        고객지원 챗봇 서버 시작
+        ========================================
+        - GPT API 사용: {USE_GPT}
+        - 데이터베이스: {Config.DATABASE_PATH}
+        - 서버 주소: http://localhost:5000
+        ========================================
+        """)
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    else:
+        print("Vercel 서버리스 환경 - WSGI 모드로 실행됩니다.")

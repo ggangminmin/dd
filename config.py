@@ -11,8 +11,13 @@ class Config:
     # Flask 설정
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-    # 데이터베이스 설정
-    DATABASE_PATH = 'chat_history.db'
+    # 데이터베이스 설정 (서버리스 환경 대응)
+    IS_VERCEL = os.getenv('IS_VERCEL', 'false') == 'true'
+    if IS_VERCEL:
+        # Vercel 환경에서는 /tmp 디렉토리 사용 (휘발성)
+        DATABASE_PATH = '/tmp/chat_history.db'
+    else:
+        DATABASE_PATH = 'chat_history.db'
 
     # OpenAI API 설정 (향후 사용)
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
