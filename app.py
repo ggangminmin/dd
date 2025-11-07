@@ -1,12 +1,15 @@
 """
 Flask 기반 고객지원 챗봇 애플리케이션
 상담 이력을 기억하고 감정에 맞춰 응답하는 챗봇
+전문가 시스템 통합 (메세징 전문가 + 문서작성 전문가)
 """
 from flask import Flask, render_template, request, jsonify, session
 from config import Config
 from database import Database
 from sentiment_analyzer import SentimentAnalyzer
 from file_processor import FileProcessor
+from expert_system import ExpertSystem
+from external_apis import ExternalAPIManager
 import os
 import json
 import uuid
@@ -21,6 +24,9 @@ except ImportError:
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# 파일 업로드 크기 제한 (100MB)
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 # 업로드 폴더 설정 (서버리스 환경 대응)
 IS_VERCEL = os.environ.get('IS_VERCEL', 'false') == 'true'
@@ -48,6 +54,15 @@ if OPENAI_AVAILABLE and Config.OPENAI_API_KEY and Config.USE_GPT_API:
 else:
     openai_client = None
     USE_GPT = False
+
+# 전문가 시스템 초기화
+expert_system = ExpertSystem(sentiment_analyzer, USE_GPT, openai_client)
+print(f"[전문가 시스템] 초기화 완료 - GPT 사용: {USE_GPT}")
+
+# 외부 API 관리자 초기화
+api_manager = ExternalAPIManager()
+api_status = api_manager.check_availability()
+print(f"[외부 API] 날씨 API: {api_status['weather']}, 뉴스 API: {api_status['news']}")
 
 
 @app.route('/')
@@ -79,29 +94,33 @@ def register_user():
             msg['attached_files'] = []
             for att in msg['attachments']:
                 parsed_info = att.get('parsed_info', {})
-                file_ext = parsed_info.get('type', 'unknown')
+
+                # file_info는 저장된 전체 정보 (file_processor에서 반환한 것)
+                file_ext = parsed_info.get('extension', parsed_info.get('type', 'unknown'))
                 filename = att['filename']
 
                 # 파일 정보 구성
                 file_info_dict = {
                     'filename': filename,
-                    'size': att.get('file_size', 0),
+                    'size': parsed_info.get('size', att.get('file_size', 0)),
                     'extension': file_ext,
-                    'is_image': file_ext == 'image' or file_ext in ['png', 'jpg', 'jpeg', 'gif', 'webp']
+                    'is_image': parsed_info.get('is_image', False)
                 }
 
                 # 저장된 URL 사용
-                if att.get('file_url'):
+                if parsed_info.get('url'):
+                    file_info_dict['url'] = parsed_info['url']
+                elif att.get('file_url'):
                     file_info_dict['url'] = att['file_url']
 
-                # 표 데이터가 있으면 추가
+                # 표 데이터가 있으면 추가 (Excel, CSV)
                 if 'table_data' in parsed_info:
                     file_info_dict['table_data'] = parsed_info['table_data']
+                    print(f"[파일 이력] 표 데이터 로드: {filename}, 행: {parsed_info['table_data'].get('total_rows', 0)}")
 
-                # 텍스트 미리보기 추가
-                if 'text' in parsed_info and file_ext in ['docx', 'txt', 'pdf']:
-                    preview_text = parsed_info['text'][:500] if len(parsed_info['text']) > 500 else parsed_info['text']
-                    file_info_dict['text_preview'] = preview_text
+                # 텍스트 미리보기 추가 (Word, TXT, PDF)
+                if 'text_preview' in parsed_info:
+                    file_info_dict['text_preview'] = parsed_info['text_preview']
 
                 msg['attached_files'].append(file_info_dict)
 
@@ -155,61 +174,71 @@ def chat():
 
     for file in files:
         if file and file.filename:
-            # 파일 읽기
-            file_data = file.read()
+            try:
+                # 파일 읽기
+                file_data = file.read()
+                print(f"[파일 처리] 파일명: {file.filename}, 크기: {len(file_data)} bytes")
 
-            # 모든 파일 저장
-            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'bin'
-            unique_filename = f"{uuid.uuid4()}.{ext}"
-            filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+                # 모든 파일 저장
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'bin'
+                unique_filename = f"{uuid.uuid4()}.{ext}"
+                filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
 
-            # 파일 저장
-            with open(filepath, 'wb') as f:
-                f.write(file_data)
+                # 파일 저장
+                with open(filepath, 'wb') as f:
+                    f.write(file_data)
 
-            # URL 생성 (서버리스 환경 대응)
-            if IS_VERCEL:
-                # Vercel 환경에서는 /tmp가 휘발성이므로 URL 생성하지 않음
-                # 실제 운영 환경에서는 S3, Cloudinary 등의 클라우드 스토리지 사용 권장
-                file_url = None  # 임시: 파일 URL 사용 불가
-            else:
-                file_url = f"/static/uploads/{unique_filename}"
+                # URL 생성 (서버리스 환경 대응)
+                if IS_VERCEL:
+                    # Vercel 환경에서는 /tmp가 휘발성이므로 URL 생성하지 않음
+                    # 실제 운영 환경에서는 S3, Cloudinary 등의 클라우드 스토리지 사용 권장
+                    file_url = None  # 임시: 파일 URL 사용 불가
+                else:
+                    file_url = f"/static/uploads/{unique_filename}"
 
-            # 파일 처리 (텍스트 추출)
-            result = FileProcessor.process_file(file_data, file.filename)
+                # 파일 처리 (텍스트 추출)
+                result = FileProcessor.process_file(file_data, file.filename)
 
-            if result['success']:
-                file_contents.append(result['text'])
-                file_infos.append(result['info'])
-                if result.get('has_image'):
-                    has_image = True
+                if result['success']:
+                    file_contents.append(result['text'])
+                    file_infos.append(result['info'])
+                    if result.get('has_image'):
+                        has_image = True
 
-                # 파일 정보 저장 (table_data, text_preview 포함)
-                file_info_dict = {
-                    'filename': file.filename,
-                    'url': file_url,
-                    'size': len(file_data),
-                    'is_image': allowed_image_file(file.filename),
-                    'extension': ext
-                }
+                    # 파일 정보 저장 (table_data, text_preview 포함)
+                    file_info_dict = {
+                        'filename': file.filename,
+                        'url': file_url,
+                        'size': len(file_data),
+                        'is_image': allowed_image_file(file.filename),
+                        'extension': ext
+                    }
 
-                # 표 데이터가 있으면 추가 (Excel, CSV)
-                if 'table_data' in result:
-                    file_info_dict['table_data'] = result['table_data']
+                    # 표 데이터가 있으면 추가 (Excel, CSV)
+                    if 'table_data' in result:
+                        file_info_dict['table_data'] = result['table_data']
 
-                # 텍스트 미리보기 추가 (Word, TXT, PDF 등)
-                if 'text' in result and result['info']['type'] in ['docx', 'txt', 'pdf']:
-                    # 최대 500자로 제한
-                    preview_text = result['text'][:500] if len(result['text']) > 500 else result['text']
-                    file_info_dict['text_preview'] = preview_text
+                    # 텍스트 미리보기 추가 (Word, TXT, PDF 등)
+                    if 'text' in result and result['info']['type'] in ['docx', 'txt', 'pdf']:
+                        # 최대 500자로 제한
+                        preview_text = result['text'][:500] if len(result['text']) > 500 else result['text']
+                        file_info_dict['text_preview'] = preview_text
 
-                # 이미지인 경우 image_urls에도 추가
-                if file_info_dict['is_image']:
-                    image_urls.append(file_url)
+                    # 이미지인 경우 image_urls에도 추가
+                    if file_info_dict['is_image']:
+                        image_urls.append(file_url)
 
-                attached_files.append(file_info_dict)
-            else:
-                return jsonify({'error': result['error']}), 400
+                    attached_files.append(file_info_dict)
+                    print(f"[파일 처리] 성공: {file.filename}")
+                else:
+                    print(f"[파일 처리] 실패: {file.filename} - {result['error']}")
+                    return jsonify({'error': result['error']}), 400
+            except Exception as e:
+                error_msg = f"파일 처리 중 오류 발생: {str(e)}"
+                print(f"[파일 처리 오류] {file.filename}: {error_msg}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'error': error_msg}), 500
 
     # 파일 내용을 메시지에 추가
     full_message = user_message
@@ -235,17 +264,49 @@ def chat():
             file_url
         )
 
-    # 봇 응답 생성
-    if USE_GPT:
-        bot_response = generate_gpt_response(user_id, full_message, sentiment, has_image, file_infos if has_image else None)
-    else:
-        bot_response = generate_rule_based_response(full_message, sentiment)
+    # 1단계: 외부 API 명령 확인 (날씨, 뉴스)
+    api_response = api_manager.process_command(user_message)
 
-    # 감정에 맞춰 응답 조절
-    bot_response = sentiment_analyzer.adjust_response(bot_response, sentiment)
+    if api_response:
+        # 외부 API 응답이 있으면 바로 반환
+        bot_response = api_response
+        cta = None
+        marketing_triggered = False
+
+        # API 응답도 대화 기록에 저장
+        db.save_message(user_id, bot_response, is_user=False, sentiment='neutral')
+
+        print(f"[외부 API] 명령 처리 완료")
+
+        return jsonify({
+            'response': bot_response,
+            'sentiment': sentiment,
+            'sentiment_info': sentiment_result,
+            'files_processed': len(file_infos),
+            'image_urls': image_urls,
+            'attached_files': attached_files,
+            'marketing_triggered': False,
+            'cta': None,
+            'api_triggered': True  # API 응답임을 표시
+        })
+
+    # 2단계: 전문가 시스템을 통한 응답 생성 (3인 협업)
+    # 이전 대화 컨텍스트 가져오기
+    context = db.get_user_history(user_id, limit=5)
+
+    # 3명의 전문가가 협업하여 응답 생성
+    expert_result = expert_system.process_message(full_message, sentiment, context)
+
+    bot_response = expert_result['response']
+    cta = expert_result.get('cta')
+    marketing_triggered = expert_result.get('marketing_triggered', False)
 
     # 봇 응답 저장
     db.save_message(user_id, bot_response, is_user=False, sentiment='neutral')
+
+    print(f"[전문가 시스템] 대화 버퍼: {expert_system.get_conversation_count()}개")
+    if marketing_triggered:
+        print(f"[마케팅 전문가] 긍정 신호 감지 - CTA 활성화")
 
     return jsonify({
         'response': bot_response,
@@ -253,7 +314,9 @@ def chat():
         'sentiment_info': sentiment_result,
         'files_processed': len(file_infos),
         'image_urls': image_urls,
-        'attached_files': attached_files  # 모든 첨부 파일 정보
+        'attached_files': attached_files,  # 모든 첨부 파일 정보
+        'marketing_triggered': marketing_triggered,  # 마케팅 전문가 활성화 여부
+        'cta': cta  # CTA 문구 (있다면)
     })
 
 
@@ -380,6 +443,45 @@ def get_history():
     return jsonify({
         'history': history,
         'stats': stats
+    })
+
+
+@app.route('/api/summarize', methods=['POST'])
+def summarize_conversation():
+    """대화 내용 수동 요약 (문서작성 전문가)"""
+    user_id = session.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    # 문서작성 전문가가 대화 요약
+    summary = expert_system.manual_summarize()
+
+    if summary:
+        return jsonify({
+            'success': True,
+            'summary': summary,
+            'message': '대화 내용이 성공적으로 요약되었습니다.'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'message': '요약할 대화 내용이 없습니다.'
+        }), 400
+
+
+@app.route('/api/expert-status', methods=['GET'])
+def get_expert_status():
+    """전문가 시스템 상태 조회"""
+    user_id = session.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    return jsonify({
+        'conversation_count': expert_system.get_conversation_count(),
+        'auto_summarize_interval': expert_system.auto_summarize_interval,
+        'gpt_enabled': USE_GPT
     })
 
 

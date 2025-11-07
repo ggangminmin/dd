@@ -31,6 +31,9 @@
                         <span id="user-info" class="user-info"></span>
                     </div>
                     <div class="header-right">
+                        <button class="icon-btn" onclick="showExpertStatus()" title="전문가 시스템">
+                            🤖
+                        </button>
                         <button class="icon-btn" onclick="showHistory()" title="대화 이력">
                             📊
                         </button>
@@ -50,7 +53,7 @@
                 <!-- 입력 영역 -->
                 <div class="chat-input-container">
                     <div id="file-preview" class="file-preview"></div>
-                    <div class="input-wrapper">
+                    <div class="input-wrapper" id="drop-zone">
                         <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.docx,.txt,.xlsx,.csv,.json,.xml" style="display: none;" onchange="handleFileSelect(event)">
                         <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="파일 첨부">
                             📎
@@ -79,6 +82,19 @@
                 </div>
                 <div id="history-content" class="modal-body">
                     <!-- 통계 정보가 여기에 표시됩니다 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 전문가 시스템 모달 -->
+        <div id="expert-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🤖 전문가 시스템 상태</h3>
+                    <button class="close-btn" onclick="closeExpertStatus()">&times;</button>
+                </div>
+                <div id="expert-content" class="modal-body">
+                    <!-- 전문가 시스템 정보가 여기에 표시됩니다 -->
                 </div>
             </div>
         </div>

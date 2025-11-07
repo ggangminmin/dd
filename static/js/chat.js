@@ -7,15 +7,22 @@ let selectedFiles = [];
 
 // 페이지 로드 시 실행
 document.addEventListener('DOMContentLoaded', function() {
-    // Enter 키로 로그인
-    const usernameInput = document.getElementById('username-input');
-    if (usernameInput) {
-        usernameInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                loginUser();
-            }
-        });
-        usernameInput.focus();
+    // 저장된 사용자 정보 확인
+    const savedUsername = localStorage.getItem('chatbot_username');
+    if (savedUsername) {
+        // 저장된 사용자명으로 자동 로그인
+        autoLogin(savedUsername);
+    } else {
+        // Enter 키로 로그인
+        const usernameInput = document.getElementById('username-input');
+        if (usernameInput) {
+            usernameInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loginUser();
+                }
+            });
+            usernameInput.focus();
+        }
     }
 
     // 드래그 앤 드롭 설정
@@ -26,22 +33,13 @@ document.addEventListener('DOMContentLoaded', function() {
  * 드래그 앤 드롭 기능 설정
  */
 function setupDragAndDrop() {
-    const chatMessages = document.getElementById('chat-messages');
-    const inputContainer = document.querySelector('.chat-input-container');
+    const dropZone = document.getElementById('drop-zone');
 
-    if (!chatMessages || !inputContainer) return;
+    if (!dropZone) return;
 
-    // 드래그 오버레이 생성
-    const overlay = document.createElement('div');
-    overlay.id = 'drag-overlay';
-    overlay.innerHTML = '<div class="drag-message">📎 파일을 여기에 놓으세요</div>';
-    overlay.style.display = 'none';
-    document.body.appendChild(overlay);
-
-    let dragCounter = 0;
-
-    // 채팅 화면 전체에 드래그 앤 드롭 이벤트 등록
+    // 드래그 이벤트 방지 (기본 동작 차단)
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
         document.body.addEventListener(eventName, preventDefaults, false);
     });
 
@@ -50,30 +48,25 @@ function setupDragAndDrop() {
         e.stopPropagation();
     }
 
-    // 드래그 진입
-    document.body.addEventListener('dragenter', function(e) {
-        dragCounter++;
-        if (dragCounter === 1 && document.getElementById('chat-screen').classList.contains('active')) {
-            overlay.style.display = 'flex';
+    // 드래그 진입 시 시각적 피드백
+    dropZone.addEventListener('dragenter', function(e) {
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragover', function(e) {
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', function(e) {
+        // input-wrapper 영역을 벗어날 때만 클래스 제거
+        if (e.target === dropZone) {
+            dropZone.classList.remove('drag-over');
         }
     });
 
-    // 드래그 나가기
-    document.body.addEventListener('dragleave', function(e) {
-        dragCounter--;
-        if (dragCounter === 0) {
-            overlay.style.display = 'none';
-        }
-    });
-
-    // 드롭
-    document.body.addEventListener('drop', function(e) {
-        dragCounter = 0;
-        overlay.style.display = 'none';
-
-        if (!document.getElementById('chat-screen').classList.contains('active')) {
-            return;
-        }
+    // 파일 드롭
+    dropZone.addEventListener('drop', function(e) {
+        dropZone.classList.remove('drag-over');
 
         const dt = e.dataTransfer;
         const files = dt.files;
@@ -81,6 +74,54 @@ function setupDragAndDrop() {
         if (files.length > 0) {
             handleDroppedFiles(files);
         }
+    });
+}
+
+/**
+ * 파일 미리보기 표시
+ */
+function displayFilePreview(files) {
+    const preview = document.getElementById('file-preview');
+    preview.innerHTML = '';
+
+    files.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+
+        // 이미지 파일 확인
+        const isImage = file.type.startsWith('image/');
+
+        if (isImage) {
+            // 이미지 미리보기
+            fileItem.className = 'file-item image-preview';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fileSize = formatFileSize(file.size);
+                fileItem.innerHTML = `
+                    <img src="${e.target.result}" alt="${file.name}" class="preview-image">
+                    <div class="image-overlay">
+                        <span class="image-name">${file.name}</span>
+                        <span class="image-size">${fileSize}</span>
+                    </div>
+                    <button class="file-remove image-remove" onclick="removeFile(${index})" title="삭제">&times;</button>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            // 일반 파일
+            fileItem.className = 'file-item';
+            const fileIcon = getFileIcon(file.name);
+            const fileSize = formatFileSize(file.size);
+
+            fileItem.innerHTML = `
+                <span class="file-icon">${fileIcon}</span>
+                <span class="file-name">${file.name}</span>
+                <span class="file-size">${fileSize}</span>
+                <button class="file-remove" onclick="removeFile(${index})">&times;</button>
+            `;
+        }
+
+        preview.appendChild(fileItem);
     });
 }
 
@@ -140,42 +181,11 @@ async function loginUser() {
         const data = await response.json();
         currentUser = data;
 
-        // 채팅 화면으로 전환
-        switchScreen('chat-screen');
+        // localStorage에 사용자명 저장
+        localStorage.setItem('chatbot_username', data.username);
 
-        // 사용자 정보 표시
-        document.getElementById('user-info').textContent = `${data.username}님 환영합니다`;
-
-        // 메시지 영역 초기화
-        const messagesDiv = document.getElementById('chat-messages');
-        messagesDiv.innerHTML = '';
-
-        // 환영 메시지 표시
-        addBotMessage(data.welcome_message);
-
-        // 이전 대화 이력 표시
-        if (data.history && data.history.length > 0) {
-            data.history.forEach(msg => {
-                if (msg.is_user) {
-                    // 사용자 메시지 표시
-                    const tempId = Date.now() + Math.random();
-
-                    // 첨부 파일이 있는 경우와 없는 경우를 구분하여 처리
-                    if (msg.attached_files && msg.attached_files.length > 0) {
-                        // 메시지가 있으면 메시지 먼저 추가, 없으면 빈 메시지로 추가
-                        addUserMessageWithHistory(msg.message || '', msg.attached_files, tempId, false);
-                    } else {
-                        // 첨부 파일이 없으면 일반 메시지만 표시
-                        addUserMessage(msg.message, [], tempId, false);
-                    }
-                } else {
-                    addBotMessage(msg.message, false);
-                }
-            });
-        }
-
-        // 입력창에 포커스
-        document.getElementById('message-input').focus();
+        // 채팅 화면 표시
+        displayChatScreen(data);
 
     } catch (error) {
         console.error('Login error:', error);
@@ -184,11 +194,86 @@ async function loginUser() {
 }
 
 /**
+ * 자동 로그인
+ */
+async function autoLogin(username) {
+    try {
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username })
+        });
+
+        if (!response.ok) {
+            // 자동 로그인 실패 시 localStorage 삭제하고 로그인 화면으로
+            localStorage.removeItem('chatbot_username');
+            return;
+        }
+
+        const data = await response.json();
+        currentUser = data;
+
+        // 채팅 화면 표시
+        displayChatScreen(data);
+
+    } catch (error) {
+        console.error('Auto login error:', error);
+        // 오류 발생 시 localStorage 삭제
+        localStorage.removeItem('chatbot_username');
+    }
+}
+
+/**
+ * 채팅 화면 표시
+ */
+function displayChatScreen(data) {
+    // 채팅 화면으로 전환
+    switchScreen('chat-screen');
+
+    // 사용자 정보 표시
+    document.getElementById('user-info').textContent = `${data.username}님 환영합니다`;
+
+    // 메시지 영역 초기화
+    const messagesDiv = document.getElementById('chat-messages');
+    messagesDiv.innerHTML = '';
+
+    // 환영 메시지 표시
+    addBotMessage(data.welcome_message);
+
+    // 이전 대화 이력 표시
+    if (data.history && data.history.length > 0) {
+        data.history.forEach(msg => {
+            if (msg.is_user) {
+                // 사용자 메시지 표시
+                const tempId = Date.now() + Math.random();
+
+                // 첨부 파일이 있는 경우와 없는 경우를 구분하여 처리
+                if (msg.attached_files && msg.attached_files.length > 0) {
+                    // 메시지가 있으면 메시지 먼저 추가, 없으면 빈 메시지로 추가
+                    addUserMessageWithHistory(msg.message || '', msg.attached_files, tempId, false);
+                } else {
+                    // 첨부 파일이 없으면 일반 메시지만 표시
+                    addUserMessage(msg.message, [], tempId, false);
+                }
+            } else {
+                addBotMessage(msg.message, false);
+            }
+        });
+    }
+
+    // 입력창에 포커스
+    document.getElementById('message-input').focus();
+}
+
+/**
  * 로그아웃
  */
 function logout() {
     if (confirm('로그아웃하시겠습니까?')) {
         currentUser = null;
+        localStorage.removeItem('chatbot_username');
         document.getElementById('username-input').value = '';
         switchScreen('login-screen');
     }
@@ -205,55 +290,14 @@ function switchScreen(screenId) {
 }
 
 /**
- * 파일 선택 처리
+ * 파일 선택 처리 (📎 버튼 클릭 시)
  */
 function handleFileSelect(event) {
     const files = Array.from(event.target.files);
     selectedFiles = files;
 
     // 파일 미리보기 표시
-    const preview = document.getElementById('file-preview');
-    preview.innerHTML = '';
-
-    files.forEach((file, index) => {
-        const fileItem = document.createElement('div');
-
-        // 이미지 파일 확인
-        const isImage = file.type.startsWith('image/');
-
-        if (isImage) {
-            // 이미지 미리보기
-            fileItem.className = 'file-item image-preview';
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const fileSize = formatFileSize(file.size);
-                fileItem.innerHTML = `
-                    <img src="${e.target.result}" alt="${file.name}" class="preview-image">
-                    <div class="image-overlay">
-                        <span class="image-name">${file.name}</span>
-                        <span class="image-size">${fileSize}</span>
-                    </div>
-                    <button class="file-remove image-remove" onclick="removeFile(${index})" title="삭제">&times;</button>
-                `;
-            };
-            reader.readAsDataURL(file);
-        } else {
-            // 일반 파일
-            fileItem.className = 'file-item';
-            const fileIcon = getFileIcon(file.name);
-            const fileSize = formatFileSize(file.size);
-
-            fileItem.innerHTML = `
-                <span class="file-icon">${fileIcon}</span>
-                <span class="file-name">${file.name}</span>
-                <span class="file-size">${fileSize}</span>
-                <button class="file-remove" onclick="removeFile(${index})">&times;</button>
-            `;
-        }
-
-        preview.appendChild(fileItem);
-    });
+    displayFilePreview(files);
 }
 
 /**
@@ -262,53 +306,14 @@ function handleFileSelect(event) {
 function removeFile(index) {
     selectedFiles.splice(index, 1);
 
-    // 파일 input 초기화
-    const fileInput = document.getElementById('file-input');
-    fileInput.value = '';
-
-    // 미리보기 다시 렌더링
-    const preview = document.getElementById('file-preview');
-    preview.innerHTML = '';
-
-    selectedFiles.forEach((file, idx) => {
-        const fileItem = document.createElement('div');
-
-        // 이미지 파일 확인
-        const isImage = file.type.startsWith('image/');
-
-        if (isImage) {
-            // 이미지 미리보기
-            fileItem.className = 'file-item image-preview';
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const fileSize = formatFileSize(file.size);
-                fileItem.innerHTML = `
-                    <img src="${e.target.result}" alt="${file.name}" class="preview-image">
-                    <div class="image-overlay">
-                        <span class="image-name">${file.name}</span>
-                        <span class="image-size">${fileSize}</span>
-                    </div>
-                    <button class="file-remove image-remove" onclick="removeFile(${idx})" title="삭제">&times;</button>
-                `;
-            };
-            reader.readAsDataURL(file);
-        } else {
-            // 일반 파일
-            fileItem.className = 'file-item';
-            const fileIcon = getFileIcon(file.name);
-            const fileSize = formatFileSize(file.size);
-
-            fileItem.innerHTML = `
-                <span class="file-icon">${fileIcon}</span>
-                <span class="file-name">${file.name}</span>
-                <span class="file-size">${fileSize}</span>
-                <button class="file-remove" onclick="removeFile(${idx})">&times;</button>
-            `;
-        }
-
-        preview.appendChild(fileItem);
-    });
+    // 파일이 모두 제거되면 미리보기 영역 비우기
+    if (selectedFiles.length === 0) {
+        const preview = document.getElementById('file-preview');
+        preview.innerHTML = '';
+    } else {
+        // 미리보기 다시 렌더링
+        displayFilePreview(selectedFiles);
+    }
 }
 
 /**
@@ -342,19 +347,26 @@ async function sendMessage() {
         formData.append('message', message);
 
         selectedFiles.forEach(file => {
+            console.log('첨부 파일:', file.name, file.size, 'bytes');
             formData.append('files', file);
         });
 
+        console.log('메시지 전송 시작...');
         const response = await fetch('/api/chat', {
             method: 'POST',
             body: formData
         });
 
+        console.log('응답 상태:', response.status, response.statusText);
+
         if (!response.ok) {
-            throw new Error('메시지 전송 실패');
+            const errorText = await response.text();
+            console.error('서버 오류 응답:', errorText);
+            throw new Error(`메시지 전송 실패: ${response.status}`);
         }
 
         const data = await response.json();
+        console.log('응답 데이터:', data);
 
         // 타이핑 인디케이터 제거
         hideTypingIndicator();
@@ -374,7 +386,8 @@ async function sendMessage() {
 
         // 파일 미리보기 초기화
         selectedFiles = [];
-        document.getElementById('file-preview').innerHTML = '';
+        const preview = document.getElementById('file-preview');
+        preview.innerHTML = '';
         document.getElementById('file-input').value = '';
 
     } catch (error) {
@@ -675,6 +688,112 @@ async function showHistory() {
  */
 function closeHistory() {
     document.getElementById('history-modal').classList.remove('active');
+}
+
+/**
+ * 전문가 시스템 상태 표시
+ */
+async function showExpertStatus() {
+    try {
+        const response = await fetch('/api/expert-status');
+        if (!response.ok) throw new Error('전문가 상태 조회 실패');
+
+        const data = await response.json();
+        const modal = document.getElementById('expert-modal');
+        const content = document.getElementById('expert-content');
+
+        const progress = (data.conversation_count / data.auto_summarize_interval) * 100;
+
+        let html = `
+            <div class="expert-section">
+                <h4>💬 메세징 전문가</h4>
+                <p>고객 질문에 감정 기반으로 자연스럽게 응답합니다.</p>
+                <div class="expert-status">
+                    <span class="status-badge active">활성</span>
+                    <span>GPT ${data.gpt_enabled ? '사용 중' : '미사용'}</span>
+                </div>
+            </div>
+
+            <div class="expert-section">
+                <h4>📢 마케팅 전문가</h4>
+                <p>긍정적 반응 감지 시 자연스러운 CTA를 제안합니다.</p>
+                <div class="expert-status">
+                    <span class="status-badge active">활성</span>
+                    <span>긍정 신호 모니터링 중</span>
+                </div>
+            </div>
+
+            <div class="expert-section">
+                <h4>📝 문서작성 전문가</h4>
+                <p>대화 내용을 자동으로 분석하고 FAQ를 생성합니다.</p>
+                <div class="expert-status">
+                    <span class="status-badge active">활성</span>
+                    <span>대화 버퍼: ${data.conversation_count}/${data.auto_summarize_interval}개</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${progress}%"></div>
+                </div>
+                <p class="progress-text">${data.auto_summarize_interval - data.conversation_count}개 대화 후 자동 요약</p>
+            </div>
+
+            <div class="expert-section">
+                <h4>🔄 협업 워크플로우</h4>
+                <ol class="workflow-list">
+                    <li>고객 질문 → <strong>메세징 전문가</strong>가 감정 분석 후 1차 응답</li>
+                    <li>긍정 신호 감지 → <strong>마케팅 전문가</strong>가 CTA 추가</li>
+                    <li>대화 진행 → <strong>문서작성 전문가</strong>가 자동 기록</li>
+                    <li>${data.auto_summarize_interval}개 대화 완료 → 자동으로 FAQ 생성 및 저장</li>
+                </ol>
+            </div>
+
+            <div class="expert-actions">
+                <button onclick="manualSummarize()" class="summarize-btn">📄 지금 요약하기</button>
+            </div>
+        `;
+
+        content.innerHTML = html;
+        modal.classList.add('active');
+
+    } catch (error) {
+        console.error('Expert status error:', error);
+        alert('전문가 상태를 불러오는 중 오류가 발생했습니다.');
+    }
+}
+
+/**
+ * 전문가 시스템 모달 닫기
+ */
+function closeExpertStatus() {
+    document.getElementById('expert-modal').classList.remove('active');
+}
+
+/**
+ * 수동 요약 트리거
+ */
+async function manualSummarize() {
+    if (!confirm('현재까지의 대화 내용을 요약하시겠습니까?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/summarize', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('✅ ' + data.message + '\n\n주제: ' + data.summary.main_topic);
+            closeExpertStatus();
+            // 상태 새로고침
+            setTimeout(() => showExpertStatus(), 500);
+        } else {
+            alert('⚠️ ' + data.message);
+        }
+    } catch (error) {
+        console.error('Summarize error:', error);
+        alert('요약 중 오류가 발생했습니다.');
+    }
 }
 
 /**

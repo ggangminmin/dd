@@ -154,8 +154,12 @@ class FileProcessor:
     def process_xlsx(file_data, filename):
         """XLSX 파일 처리"""
         try:
+            print(f"[FileProcessor] XLSX 처리 시작: {filename}, 크기: {len(file_data)} bytes")
             xlsx_file = io.BytesIO(file_data)
-            df = pd.read_excel(xlsx_file)
+
+            # pandas로 Excel 읽기 (openpyxl 엔진 명시)
+            df = pd.read_excel(xlsx_file, engine='openpyxl')
+            print(f"[FileProcessor] Excel 읽기 성공: {len(df)} 행, {len(df.columns)} 열")
 
             # 데이터프레임을 텍스트로 변환
             text = df.to_string()
@@ -163,13 +167,16 @@ class FileProcessor:
 
             # 표 데이터 추출 (최대 20행)
             preview_df = df.head(20)
+
+            # NaN 값을 None으로 변환 (JSON 직렬화를 위해)
             table_data = {
                 'headers': preview_df.columns.tolist(),
-                'rows': preview_df.values.tolist(),
+                'rows': preview_df.fillna('').values.tolist(),  # NaN을 빈 문자열로 변환
                 'total_rows': len(df),
                 'total_columns': len(df.columns)
             }
 
+            print(f"[FileProcessor] XLSX 처리 완료: {filename}")
             return {
                 'success': True,
                 'info': {
@@ -183,6 +190,9 @@ class FileProcessor:
                 'table_data': table_data
             }
         except Exception as e:
+            print(f"[FileProcessor] XLSX 처리 오류: {filename} - {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
                 'error': f"XLSX 처리 오류: {str(e)}"
