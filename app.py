@@ -55,14 +55,20 @@ else:
     openai_client = None
     USE_GPT = False
 
-# 전문가 시스템 초기화
-expert_system = ExpertSystem(sentiment_analyzer, USE_GPT, openai_client)
-print(f"[전문가 시스템] 초기화 완료 - GPT 사용: {USE_GPT}")
-
 # 외부 API 관리자 초기화
 api_manager = ExternalAPIManager()
 api_status = api_manager.check_availability()
 print(f"[외부 API] 날씨 API: {api_status['weather']}, 뉴스 API: {api_status['news']}")
+
+# 전문가 시스템 초기화 (API 관리자 전달)
+expert_system = ExpertSystem(
+    sentiment_analyzer,
+    USE_GPT,
+    openai_client,
+    weather_api=api_manager.weather_api,
+    news_api=api_manager.news_api
+)
+print(f"[전문가 시스템] 초기화 완료 - GPT 사용: {USE_GPT}")
 
 
 @app.route('/')

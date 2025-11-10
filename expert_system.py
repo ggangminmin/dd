@@ -13,10 +13,12 @@ class MessagingExpert:
     감정 분석 결과에 따라 말투를 조절하여 응대
     """
 
-    def __init__(self, sentiment_analyzer, use_gpt=False, openai_client=None):
+    def __init__(self, sentiment_analyzer, use_gpt=False, openai_client=None, weather_api=None, news_api=None):
         self.sentiment_analyzer = sentiment_analyzer
         self.use_gpt = use_gpt
         self.openai_client = openai_client
+        self.weather_api = weather_api
+        self.news_api = news_api
 
     def generate_response(self, message: str, sentiment: str, context: List[Dict] = None) -> str:
         """
@@ -30,6 +32,33 @@ class MessagingExpert:
         Returns:
             생성된 응답 메시지
         """
+        # 날씨 API가 사용 가능한 경우, 지역명 자동 감지
+        if self.weather_api and self.weather_api.is_available():
+            # 사용자 입력에서 지역명 감지
+            detected_location = self.weather_api.detect_location_in_text(message)
+
+            # "날씨" 키워드가 포함되어 있거나, 지역명만 입력된 경우
+            weather_keywords = ['날씨', '기온', '온도', '덥', '춥', '비', '눈', '바람', '오늘']
+            has_weather_keyword = any(keyword in message for keyword in weather_keywords)
+
+            if detected_location:
+                # 지역명이 감지되고 날씨 키워드가 있는 경우
+                if has_weather_keyword:
+                    weather_info = self.weather_api.get_weather(detected_location)
+                    if weather_info:
+                        return weather_info
+                # 지역명만 단독으로 입력된 경우 (3글자 이상, 다른 내용 없음)
+                elif len(message.strip()) <= 20 and detected_location in message:
+                    weather_info = self.weather_api.get_weather(detected_location)
+                    if weather_info:
+                        return weather_info
+
+            # 날씨 키워드는 있지만 특정 지역명이 없는 경우 → 서울 날씨 조회 (기본값)
+            if has_weather_keyword and not detected_location:
+                weather_info = self.weather_api.get_weather('서울')
+                if weather_info:
+                    return weather_info
+
         if self.use_gpt and self.openai_client:
             return self._generate_gpt_response(message, sentiment, context)
         else:
@@ -388,8 +417,8 @@ class ExpertSystem:
     전문가 협업 시스템 - 메세징, 마케팅, 문서작성 전문가 3인 체제
     """
 
-    def __init__(self, sentiment_analyzer, use_gpt=False, openai_client=None):
-        self.messaging_expert = MessagingExpert(sentiment_analyzer, use_gpt, openai_client)
+    def __init__(self, sentiment_analyzer, use_gpt=False, openai_client=None, weather_api=None, news_api=None):
+        self.messaging_expert = MessagingExpert(sentiment_analyzer, use_gpt, openai_client, weather_api, news_api)
         self.marketing_expert = MarketingExpert(use_gpt, openai_client)
         self.documentation_expert = DocumentationExpert(use_gpt, openai_client)
         self.conversation_counter = 0
