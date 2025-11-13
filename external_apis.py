@@ -524,7 +524,49 @@ class WeatherAPI:
 
             # 중동/아프리카
             '두바이': 'Dubai',
-            '카이로': 'Cairo'
+            '카이로': 'Cairo',
+            '이스탄불': 'Istanbul',
+            '텔아비브': 'Tel Aviv',
+            '리야드': 'Riyadh',
+            '도하': 'Doha',
+            '아부다비': 'Abu Dhabi',
+
+            # 추가 아시아 도시
+            '타이페이': 'Taipei',
+            '쿠알라룸푸르': 'Kuala Lumpur',
+            '방콕': 'Bangkok',
+            '델리': 'Delhi',
+            '서울': 'Seoul',
+            '부산': 'Busan',
+
+            # 추가 유럽 도시
+            '리스본': 'Lisbon',
+            '아테네': 'Athens',
+            '코펜하겐': 'Copenhagen',
+            '오슬로': 'Oslo',
+            '스톡홀름': 'Stockholm',
+            '헬싱키': 'Helsinki',
+            '더블린': 'Dublin',
+            '브뤼셀': 'Brussels',
+
+            # 추가 미주 도시
+            '마이애미': 'Miami',
+            '댈러스': 'Dallas',
+            '휴스턴': 'Houston',
+            '애틀랜타': 'Atlanta',
+            '덴버': 'Denver',
+            '피닉스': 'Phoenix',
+            '샌디에이고': 'San Diego',
+            '포틀랜드': 'Portland',
+            '몬트리올': 'Montreal',
+            '상파울루': 'Sao Paulo',
+            '부에노스아이레스': 'Buenos Aires',
+            '리우데자네이루': 'Rio de Janeiro',
+
+            # 추가 오세아니아
+            '브리즈번': 'Brisbane',
+            '퍼스': 'Perth',
+            '웰링턴': 'Wellington'
         }
 
         # 한국 도시 목록 (KR 국가 코드가 필요한 도시들)
@@ -597,26 +639,51 @@ class WeatherAPI:
 
     def detect_location_in_text(self, text: str) -> Optional[str]:
         """
-        텍스트에서 한국 지역명 자동 감지
+        텍스트에서 지역명 자동 감지 (한글 + 영문)
 
         Args:
             text: 사용자 입력 문장
 
         Returns:
-            감지된 지역명 (한글) 또는 None
+            감지된 지역명 (한글 또는 영문) 또는 None
         """
         if not text:
             return None
 
-        # 공백 제거 (파싱용)
+        # 1. 한글 지역명 감지
         clean_text = text.replace(' ', '').replace(',', '')
-
-        # 가장 긴 매칭부터 시도 (예: "은평구"가 "평구"보다 우선)
         sorted_keys = sorted(self.korean_cities.keys(), key=len, reverse=True)
 
         for key in sorted_keys:
             if key in clean_text:
                 return key
+
+        # 2. 영문 지역명 감지 (대소문자 구분 없음)
+        # 'weather' 또는 '날씨' 키워드 앞의 단어 추출
+        text_lower = text.lower()
+        for keyword in ['weather', '날씨', '기온']:
+            if keyword in text_lower:
+                parts = text.split(keyword)[0].strip()
+                if parts:
+                    # 마지막 단어를 도시명으로 추출
+                    words = parts.split()
+                    if words:
+                        # 여러 단어일 수 있음 (예: "New York")
+                        # 마지막 1-3개 단어 확인
+                        for i in range(min(3, len(words)), 0, -1):
+                            potential_city = ' '.join(words[-i:])
+                            # 영문자로만 구성되어 있고 2글자 이상이면 도시명으로 간주
+                            if potential_city.replace(' ', '').isalpha() and len(potential_city) >= 2:
+                                return potential_city.title()  # 첫 글자 대문자로
+                return None
+
+        # 3. 단순히 영문 도시명만 입력된 경우 (키워드 없이)
+        # 예: "Paris", "Tokyo"
+        words = text.strip().split()
+        if len(words) <= 2:  # 1-2 단어
+            potential_city = ' '.join(words)
+            if potential_city.replace(' ', '').isalpha() and len(potential_city) >= 3:
+                return potential_city.title()
 
         return None
 
@@ -1000,41 +1067,29 @@ class ExternalAPIManager:
         message_lower = message.lower()
 
         # 날씨 명령 감지
-        if any(keyword in message_lower for keyword in ['날씨', '기온', '날씨알려줘', '날씨어때']):
-            # 지역명 추출 (더 정교한 패턴)
-            location = "서울"  # 기본값
+        if any(keyword in message_lower for keyword in ['날씨', '기온', '날씨알려줘', '날씨어때', 'weather']):
+            # 자동 지역명 감지 사용
+            detected_location = self.weather_api.detect_location_in_text(message)
 
-            # '날씨' 키워드 이전의 텍스트를 지역명으로 추출
-            for keyword in ['날씨', '기온']:
-                if keyword in message:
-                    parts = message.split(keyword)[0].strip()
-                    if parts:
-                        # 불필요한 단어 제거
-                        parts = parts.replace('의', '').replace('은', '').replace('는', '').strip()
+            if detected_location:
+                # 감지된 지역명 사용
+                location = detected_location
+            else:
+                # 감지 실패 시 '날씨' 키워드 앞의 텍스트를 지역명으로 추출
+                location = None
+                for keyword in ['날씨', '기온', 'weather']:
+                    if keyword in message_lower:
+                        parts = message.split(keyword)[0].strip()
                         if parts:
-                            location = parts
-                            break
+                            # 불필요한 단어 제거
+                            parts = parts.replace('의', '').replace('은', '').replace('는', '').replace('어때', '').strip()
+                            if parts:
+                                location = parts
+                                break
 
-            # 명시적인 지역명이 포함된 경우
-            if not location or location == "서울":
-                if '부산' in message:
-                    location = "부산"
-                elif '인천' in message:
-                    location = "인천"
-                elif '대구' in message:
-                    location = "대구"
-                elif '대전' in message:
-                    location = "대전"
-                elif '광주' in message:
-                    location = "광주"
-                elif '울산' in message:
-                    location = "울산"
-                elif '제주' in message:
-                    location = "제주"
-                elif '은평구' in message:
-                    location = "서울시 은평구"
-                elif '광명' in message or '철산동' in message:
-                    location = "경기도 광명시"
+                # 여전히 지역명이 없으면 기본값 사용
+                if not location:
+                    location = "서울"
 
             return self.weather_api.get_weather(location)
 
