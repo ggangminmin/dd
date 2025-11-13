@@ -22,6 +22,48 @@ class WeatherAPI:
         self.base_url = "http://api.openweathermap.org/data/2.5/weather"
         self.forecast_url = "http://api.openweathermap.org/data/2.5/forecast"
 
+        # 작은 도시를 가까운 큰 도시로 매핑 (OpenWeatherMap이 인식하지 못하는 경우)
+        self.city_fallback = {
+            # 경기도 - 서울 인근
+            '광명': '서울',
+            '과천': '서울',
+            '구리': '서울',
+            '군포': '수원',
+            '하남': '서울',
+            '의왕': '수원',
+            '오산': '수원',
+            '안성': '평택',
+            '여주': '이천',
+            '양평': '이천',
+            '가평': '춘천',
+            '연천': '의정부',
+            '포천': '의정부',
+            '동두천': '의정부',
+
+            # 강원도
+            '태백': '강릉',
+            '삼척': '강릉',
+            '속초': '강릉',
+
+            # 충청도
+            '제천': '청주',
+            '계룡': '대전',
+
+            # 경상도
+            '상주': '구미',
+            '문경': '구미',
+            '영천': '경주',
+            '경산': '대구',
+            '밀양': '창원',
+            '사천': '진주',
+
+            # 전라도
+            '정읍': '전주',
+            '남원': '전주',
+            '김제': '전주',
+            '나주': '광주',
+        }
+
         # 도시 영문명 매핑 (한국 + 해외 주요 도시)
         self.korean_cities = {
             # 한국 광역시/특별시 (다양한 표현)
@@ -764,6 +806,18 @@ class WeatherAPI:
             # 한국어 지역명 처리
             if any(ord(char) > 127 for char in location_input):  # 한글 포함 여부
                 city_en, city_kr = self.parse_korean_location(location_input)
+
+                # Fallback: API가 인식하지 못하는 작은 도시는 가까운 큰 도시로 매핑
+                if city_kr in self.city_fallback:
+                    fallback_city = self.city_fallback[city_kr]
+                    print(f"[날씨 API] '{city_kr}' → '{fallback_city}' (인근 도시로 조회)")
+                    # 재귀 호출로 fallback 도시의 날씨 조회
+                    result = self.get_weather(fallback_city, lang)
+                    # 응답 메시지에 원래 도시명 포함
+                    if result and not result.startswith('⚠️'):
+                        return f"{original_input} (인근 {fallback_city} 지역) {result[len(fallback_city)+3:]}"
+                    return result
+
                 # 한국 도시인지 확인하여 국가 코드 결정
                 if city_kr in self.korean_city_names:
                     query = f"{city_en},KR"  # 한국 도시만 KR 국가 코드 추가
