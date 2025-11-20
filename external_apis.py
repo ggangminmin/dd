@@ -33,8 +33,9 @@ class WeatherAPI:
             '의왕': '수원',
             '오산': '수원',
             '안성': '평택',
-            '여주': '이천',
-            '양평': '이천',
+            '이천': '수원',
+            '여주': '수원',
+            '양평': '수원',
             '가평': '춘천',
             '연천': '의정부',
             '포천': '의정부',
@@ -56,6 +57,7 @@ class WeatherAPI:
             '경산': '대구',
             '밀양': '창원',
             '사천': '진주',
+            '거제': '부산',
 
             # 전라도
             '정읍': '전주',
@@ -950,6 +952,44 @@ class NewsAPI:
         """API 키가 설정되어 있는지 확인"""
         return self.api_key is not None and self.api_key != ""
 
+    def _wrap_text(self, text: str, width: int = 50) -> str:
+        """
+        텍스트를 지정된 폭으로 줄바꿈 (메신저 말풍선 스타일)
+
+        Args:
+            text: 줄바꿈할 텍스트
+            width: 한 줄의 최대 길이 (기본 50자)
+
+        Returns:
+            줄바꿈된 텍스트
+        """
+        if not text or len(text) <= width:
+            return text
+
+        words = text.split()
+        lines = []
+        current_line = []
+        current_length = 0
+
+        for word in words:
+            word_length = len(word)
+            # 현재 줄에 단어를 추가했을 때 길이 확인
+            if current_length + word_length + len(current_line) <= width:
+                current_line.append(word)
+                current_length += word_length
+            else:
+                # 현재 줄을 완성하고 새 줄 시작
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+                current_length = word_length
+
+        # 마지막 줄 추가
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        return '\n'.join(lines)
+
     def get_top_news(self, country: str = "kr", category: Optional[str] = None, count: int = 5) -> Optional[str]:
         """
         최신 뉴스 헤드라인 조회 (한국 뉴스는 Everything API 사용)
@@ -1007,27 +1047,66 @@ class NewsAPI:
                 url = article.get('url', '')
                 published_at = article.get('publishedAt', '')
 
-                # 날짜 포맷팅
+                # 제목 정리 (불필요한 특수문자, 기자명, 대괄호, 광고 제거)
+                title = title.replace('[', '').replace(']', '').replace('|', ' ').strip()
+                # 제목에서 기자 이름 패턴 제거 (예: "- 홍길동 기자")
+                import re
+                title = re.sub(r'\s*-\s*[\w\s]+기자\s*$', '', title)
+                title = re.sub(r'\s*-\s*[\w\s]+리포터\s*$', '', title)
+                # 제목이 너무 길면 70자로 제한
+                if len(title) > 70:
+                    title = title[:67] + '...'
+
+                # 날짜 포맷팅 (YYYY-MM-DD만)
+                date_str = "날짜 정보 없음"
                 if published_at:
                     try:
                         dt = datetime.strptime(published_at, '%Y-%m-%dT%H:%M:%SZ')
-                        published_at = dt.strftime('%Y-%m-%d %H:%M')
+                        date_str = dt.strftime('%Y-%m-%d')
                     except:
                         pass
 
-                # 한 줄로 간결하게 정리
-                time_str = published_at.split()[0] if published_at else ""  # 날짜만
-                news_item = f"{i}. {title}\n   ({source} | {time_str})"
+                # 요약 정리 (1~2줄로 제한, 불필요한 내용 제거)
+                summary = description if description and description != '내용 없음' else '요약 정보 없음'
+                # 광고성 문구, 기자명 제거
+                summary = re.sub(r'\[.*?\]', '', summary)  # 대괄호 내용 제거
+                summary = re.sub(r'\(.*?\)', '', summary)  # 소괄호 내용 제거
+                summary = re.sub(r'[\w\s]+기자\s*=\s*', '', summary)  # "홍길동 기자 = " 제거
+                summary = re.sub(r'[\w\s]+기자\s*', '', summary)  # 기자 이름 제거
+                summary = summary.strip()
+                # 너무 길면 90자로 제한 (1~2줄)
+                if len(summary) > 90:
+                    summary = summary[:87] + '...'
+
+                # 출처 정리 (괄호, 특수문자 제거)
+                source = source.replace('(', '').replace(')', '').replace('[', '').replace(']', '').strip()
+
+                # 뉴스 항목 포맷팅 (메신저 말풍선 스타일, 좁은 폭)
+                # 제목을 40자 단위로 자연스럽게 줄바꿈
+                wrapped_title = self._wrap_text(title, 40)
+                # 요약을 50자 단위로 자연스럽게 줄바꿈
+                wrapped_summary = self._wrap_text(summary, 50)
+
+                news_item = f"""
+📰 {wrapped_title}
+
+요약:
+{wrapped_summary}
+
+출처: {source}
+날짜: {date_str}
+
+🔗 자세히 보기
+{url}
+
+"""
+
                 news_items.append(news_item)
 
-            # 링크는 마지막에 한번에
-            links_section = "\n\n📎 상세보기:\n"
-            for i, article in enumerate(articles, 1):
-                links_section += f"  {i}. {article.get('url', '')}\n"
-
+            # 최종 뉴스 텍스트
             news_text = f"""📰 최신 뉴스
 
-{chr(10).join(news_items)}{links_section}"""
+{''.join(news_items)}"""
 
             return news_text
 
