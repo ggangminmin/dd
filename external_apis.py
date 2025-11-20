@@ -817,7 +817,14 @@ class WeatherAPI:
                     result = self.get_weather(fallback_city, lang)
                     # 응답 메시지에 원래 도시명 포함
                     if result and not result.startswith('⚠️'):
-                        return f"{original_input} (인근 {fallback_city} 지역) {result[len(fallback_city)+3:]}"
+                        # "서울은 맑음이고..." 에서 "맑음이고..." 부분만 추출
+                        # "은 " 다음부터 가져오기
+                        if '은 ' in result:
+                            weather_part = result.split('은 ', 1)[1]
+                            return f"{original_input} (인근 {fallback_city} 지역)은 {weather_part}"
+                        else:
+                            # fallback이 실패한 경우 원본 그대로 반환
+                            return result
                     return result
 
                 # 한국 도시인지 확인하여 국가 코드 결정
@@ -856,7 +863,40 @@ class WeatherAPI:
             forecast_data = forecast_response.json()
 
             # 현재 날씨 정보 추출
-            weather_desc = weather_data['weather'][0]['description']
+            weather_main = weather_data['weather'][0]['main']  # 영문 날씨 코드
+            weather_id = weather_data['weather'][0]['id']  # 날씨 ID
+
+            # 영문 날씨 코드를 한글로 매핑
+            weather_kr_map = {
+                'Clear': '맑음',
+                'Clouds': '흐림',
+                'Rain': '비',
+                'Drizzle': '이슬비',
+                'Thunderstorm': '천둥번개',
+                'Snow': '눈',
+                'Mist': '안개',
+                'Smoke': '연기',
+                'Haze': '실안개',
+                'Dust': '먼지',
+                'Fog': '안개',
+                'Sand': '황사',
+                'Ash': '화산재',
+                'Squall': '돌풍',
+                'Tornado': '토네이도'
+            }
+
+            # 구름 양에 따라 세부 날씨 결정
+            if weather_main == 'Clouds':
+                cloudiness = weather_data.get('clouds', {}).get('all', 0)
+                if cloudiness < 25:
+                    weather_desc = '구름 조금'
+                elif cloudiness < 50:
+                    weather_desc = '구름 많음'
+                else:
+                    weather_desc = '흐림'
+            else:
+                weather_desc = weather_kr_map.get(weather_main, weather_data['weather'][0].get('description', '알 수 없음'))
+
             temp = weather_data['main']['temp']
             feels_like = weather_data['main']['feels_like']
             humidity = weather_data['main']['humidity']
@@ -872,15 +912,13 @@ class WeatherAPI:
             if forecast_data.get('list') and len(forecast_data['list']) > 0:
                 rain_prob = forecast_data['list'][0].get('pop', 0) * 100  # 0~1 값을 퍼센트로
 
-            # 구름 양
-            cloudiness = weather_data.get('clouds', {}).get('all', 0)
-
             # 자연스러운 대화형 포맷으로 변경
             # 온도를 반올림하여 정수로 표시
             temp_rounded = round(temp)
             feels_like_rounded = round(feels_like)
 
-            weather_text = f"{original_input}은 {weather_desc}이고 {temp_rounded}°C예요. (체감 {feels_like_rounded}°C)\n습도 {humidity}%, 강수확률 {rain_prob:.0f}%입니다."
+            # 조사 없이 간결하게 표시
+            weather_text = f"{original_input} {weather_desc}, {temp_rounded}°C (체감 {feels_like_rounded}°C)\n습도 {humidity}%, 강수확률 {rain_prob:.0f}%"
 
             return weather_text
 
