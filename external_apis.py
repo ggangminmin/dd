@@ -817,13 +817,14 @@ class WeatherAPI:
                     result = self.get_weather(fallback_city, lang)
                     # 응답 메시지에 원래 도시명 포함
                     if result and not result.startswith('⚠️'):
-                        # "서울은 맑음이고..." 에서 "맑음이고..." 부분만 추출
-                        # "은 " 다음부터 가져오기
-                        if '은 ' in result:
-                            weather_part = result.split('은 ', 1)[1]
-                            return f"{original_input} (인근 {fallback_city} 지역)은 {weather_part}"
+                        # "부산 맑음, 15°C..." 형식에서 도시명을 거제로 변경
+                        # 첫 번째 공백 이전이 도시명
+                        parts = result.split(' ', 1)
+                        if len(parts) == 2:
+                            weather_part = parts[1]  # "맑음, 15°C..." 부분
+                            return f"{original_input} (인근 {fallback_city} 기준) {weather_part}"
                         else:
-                            # fallback이 실패한 경우 원본 그대로 반환
+                            # 파싱 실패 시 원본 그대로 반환
                             return result
                     return result
 
@@ -990,44 +991,6 @@ class NewsAPI:
         """API 키가 설정되어 있는지 확인"""
         return self.api_key is not None and self.api_key != ""
 
-    def _wrap_text(self, text: str, width: int = 50) -> str:
-        """
-        텍스트를 지정된 폭으로 줄바꿈 (메신저 말풍선 스타일)
-
-        Args:
-            text: 줄바꿈할 텍스트
-            width: 한 줄의 최대 길이 (기본 50자)
-
-        Returns:
-            줄바꿈된 텍스트
-        """
-        if not text or len(text) <= width:
-            return text
-
-        words = text.split()
-        lines = []
-        current_line = []
-        current_length = 0
-
-        for word in words:
-            word_length = len(word)
-            # 현재 줄에 단어를 추가했을 때 길이 확인
-            if current_length + word_length + len(current_line) <= width:
-                current_line.append(word)
-                current_length += word_length
-            else:
-                # 현재 줄을 완성하고 새 줄 시작
-                if current_line:
-                    lines.append(' '.join(current_line))
-                current_line = [word]
-                current_length = word_length
-
-        # 마지막 줄 추가
-        if current_line:
-            lines.append(' '.join(current_line))
-
-        return '\n'.join(lines)
-
     def get_top_news(self, country: str = "kr", category: Optional[str] = None, count: int = 5) -> Optional[str]:
         """
         최신 뉴스 헤드라인 조회 (한국 뉴스는 Everything API 사용)
@@ -1072,79 +1035,72 @@ class NewsAPI:
             if data['status'] != 'ok' or not data.get('articles'):
                 return "📰 현재 표시할 뉴스가 없습니다."
 
-            # count 개수만큼 뉴스 가져오기
-            articles = data['articles'][:count]
+            # count 개수만큼 뉴스 가져오기 (중복 필터링 위해 더 많이 가져옴)
+            articles = data['articles'][:count * 2]
 
             from datetime import datetime
             news_items = []
+            seen_titles = set()  # 중복 제목 체크
+            item_count = 0
 
-            for i, article in enumerate(articles, 1):
+            import re
+
+            for article in articles:
+                # 이미 count 개수만큼 수집했으면 중단
+                if item_count >= count:
+                    break
+
                 title = article.get('title', '제목 없음')
-                description = article.get('description', '내용 없음')
                 source = article.get('source', {}).get('name', '출처 불명')
                 url = article.get('url', '')
-                published_at = article.get('publishedAt', '')
 
-                # 제목 정리 (불필요한 특수문자, 기자명, 대괄호, 광고 제거)
+                # 제목 정리 (불필요한 특수문자, 기자명 제거)
                 title = title.replace('[', '').replace(']', '').replace('|', ' ').strip()
-                # 제목에서 기자 이름 패턴 제거 (예: "- 홍길동 기자")
-                import re
                 title = re.sub(r'\s*-\s*[\w\s]+기자\s*$', '', title)
                 title = re.sub(r'\s*-\s*[\w\s]+리포터\s*$', '', title)
-                # 제목이 너무 길면 70자로 제한
-                if len(title) > 70:
-                    title = title[:67] + '...'
 
-                # 날짜 포맷팅 (YYYY-MM-DD만)
-                date_str = "날짜 정보 없음"
-                if published_at:
-                    try:
-                        dt = datetime.strptime(published_at, '%Y-%m-%dT%H:%M:%SZ')
-                        date_str = dt.strftime('%Y-%m-%d')
-                    except:
-                        pass
+                # 제목이 너무 길면 80자로 제한
+                if len(title) > 80:
+                    title = title[:77] + '...'
 
-                # 요약 정리 (1~2줄로 제한, 불필요한 내용 제거)
-                summary = description if description and description != '내용 없음' else '요약 정보 없음'
-                # 광고성 문구, 기자명 제거
-                summary = re.sub(r'\[.*?\]', '', summary)  # 대괄호 내용 제거
-                summary = re.sub(r'\(.*?\)', '', summary)  # 소괄호 내용 제거
-                summary = re.sub(r'[\w\s]+기자\s*=\s*', '', summary)  # "홍길동 기자 = " 제거
-                summary = re.sub(r'[\w\s]+기자\s*', '', summary)  # 기자 이름 제거
-                summary = summary.strip()
-                # 너무 길면 90자로 제한 (1~2줄)
-                if len(summary) > 90:
-                    summary = summary[:87] + '...'
+                # 중복 제목 체크
+                if title in seen_titles:
+                    continue
 
-                # 출처 정리 (괄호, 특수문자 제거)
+                seen_titles.add(title)
+                item_count += 1
+
+                # 출처 정리
                 source = source.replace('(', '').replace(')', '').replace('[', '').replace(']', '').strip()
 
-                # 뉴스 항목 포맷팅 (메신저 말풍선 스타일, 좁은 폭)
-                # 제목을 40자 단위로 자연스럽게 줄바꿈
-                wrapped_title = self._wrap_text(title, 40)
-                # 요약을 50자 단위로 자연스럽게 줄바꿈
-                wrapped_summary = self._wrap_text(summary, 50)
-
+                # 표 형식 HTML로 포맷팅
                 news_item = f"""
-📰 {wrapped_title}
-
-요약:
-{wrapped_summary}
-
-출처: {source}
-날짜: {date_str}
-
-🔗 자세히 보기
-{url}
-
-"""
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">{item_count}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;"><a href="{url}" target="_blank" style="color: #4A90E2; text-decoration: none;">{title}</a></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd; color: #888;">{source}</td>
+                </tr>"""
 
                 news_items.append(news_item)
 
-            # 최종 뉴스 텍스트
-            news_text = f"""📰 최신 뉴스
-
-{''.join(news_items)}"""
+            # 최종 뉴스 텍스트 (HTML 표 형식)
+            news_text = f"""
+            <div style="font-family: Arial, sans-serif;">
+                <h3 style="color: #333;">📰 최신 뉴스</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5;">
+                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; width: 30px;">#</th>
+                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">제목</th>
+                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; width: 120px;">출처</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {''.join(news_items)}
+                    </tbody>
+                </table>
+            </div>
+            """
 
             return news_text
 
@@ -1266,6 +1222,6 @@ class ExternalAPIManager:
 
         # 뉴스 명령 감지
         if any(keyword in message_lower for keyword in ['뉴스', '최신뉴스', '뉴스알려줘', '헤드라인']):
-            return self.news_api.get_top_news()
+            return self.news_api.get_top_news(count=10)
 
         return None

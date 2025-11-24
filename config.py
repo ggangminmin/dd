@@ -11,6 +11,12 @@ class Config:
     # Flask 설정
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+    # 세션 보안 설정
+    SESSION_COOKIE_SECURE = os.getenv('IS_VERCEL', 'false') == 'true'  # HTTPS에서만 쿠키 전송 (프로덕션)
+    SESSION_COOKIE_HTTPONLY = True  # JavaScript에서 쿠키 접근 불가
+    SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF 공격 방지
+    PERMANENT_SESSION_LIFETIME = 3600 * 24 * 7  # 7일 (초 단위)
+
     # 데이터베이스 설정 (서버리스 환경 대응)
     IS_VERCEL = os.getenv('IS_VERCEL', 'false') == 'true'
     if IS_VERCEL:

@@ -49,6 +49,53 @@
       ],
       "conversation_count": 4,
       "generated_at": "2025-11-07T09:45:59.861956"
+    },
+    {
+      "main_topic": "고객 문의 대화",
+      "keywords": [
+        "고객지원",
+        "문의"
+      ],
+      "conversation_count": 1,
+      "sentiment_summary": "주요 감정: neutral (1회)",
+      "sentiment_distribution": {
+        "neutral": 1
+      },
+      "faq_candidate": null,
+      "action_items": [],
+      "generated_at": "2025-11-10T16:05:32.249414"
+    },
+    {
+      "main_topic": "일상 대화",
+      "keywords": [
+        "안녕",
+        "인사",
+        "도움",
+        "궁금"
+      ],
+      "complaint_types": [],
+      "faq_candidate": [],
+      "sentiment_summary": "대화의 감정 흐름이 긍정적이며 친근함을 느낄 수 있음",
+      "positive_signals": [],
+      "customer_needs": "친절한 상담 및 도움",
+      "action_items": [],
+      "conversation_count": 1,
+      "generated_at": "2025-11-10T17:39:48.288038"
+    },
+    {
+      "main_topic": "고객 문의 대화",
+      "keywords": [
+        "고객지원",
+        "문의"
+      ],
+      "conversation_count": 10,
+      "sentiment_summary": "주요 감정: neutral (10회)",
+      "sentiment_distribution": {
+        "neutral": 10
+      },
+      "faq_candidate": null,
+      "action_items": [],
+      "generated_at": "2025-11-24T14:11:35.182009"
     }
   ]
 }

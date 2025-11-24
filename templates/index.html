@@ -8,16 +8,52 @@
 </head>
 <body>
     <div class="container">
-        <!-- 로그인 화면 -->
+        <!-- 로그인/회원가입 화면 -->
         <div id="login-screen" class="screen active">
             <div class="login-box">
                 <h1>{{ chatbot_name }}</h1>
                 <p class="subtitle">상담 이력을 기억하는 AI 고객지원</p>
-                <div class="login-form">
-                    <input type="text" id="username-input" placeholder="이름을 입력하세요" autocomplete="off">
-                    <button id="login-btn" onclick="loginUser()">시작하기</button>
+
+                <!-- 탭 전환 -->
+                <div class="auth-tabs">
+                    <button class="auth-tab active" onclick="switchAuthTab('login')">로그인</button>
+                    <button class="auth-tab" onclick="switchAuthTab('signup')">회원가입</button>
                 </div>
-                <div id="login-error" class="error-message"></div>
+
+                <!-- 로그인 폼 -->
+                <div id="login-form" class="auth-form active">
+                    <input type="text" id="login-username" placeholder="아이디 또는 이메일" autocomplete="username">
+                    <input type="password" id="login-password" placeholder="비밀번호" autocomplete="current-password" onkeypress="handleLoginKeyPress(event)">
+                    <button class="auth-btn" onclick="handleLogin()">로그인</button>
+                    <a href="#" class="forgot-password-link" onclick="showForgotPassword(event)">비밀번호를 잊으셨나요?</a>
+                    <div class="guest-login">
+                        <span>또는</span>
+                        <button class="guest-btn" onclick="guestLogin()">게스트로 시작하기</button>
+                    </div>
+                </div>
+
+                <!-- 회원가입 폼 -->
+                <div id="signup-form" class="auth-form">
+                    <input type="text" id="signup-username" placeholder="사용자명" autocomplete="username">
+                    <input type="email" id="signup-email" placeholder="이메일" autocomplete="email">
+                    <input type="password" id="signup-password" placeholder="비밀번호 (최소 6자)" autocomplete="new-password">
+                    <input type="password" id="signup-password-confirm" placeholder="비밀번호 확인" autocomplete="new-password" onkeypress="handleSignupKeyPress(event)">
+                    <button class="auth-btn" onclick="handleSignup()">회원가입</button>
+                </div>
+
+                <!-- 비밀번호 찾기 폼 -->
+                <div id="forgot-password-form" class="auth-form">
+                    <p style="color: #666; font-size: 14px; margin-bottom: 15px; text-align: center;">
+                        가입하신 이메일 주소를 입력하세요.<br>
+                        비밀번호 재설정 링크를 보내드립니다.
+                    </p>
+                    <input type="email" id="forgot-email" placeholder="이메일" autocomplete="email" onkeypress="handleForgotPasswordKeyPress(event)">
+                    <button class="auth-btn" onclick="handleForgotPassword()">재설정 링크 받기</button>
+                    <button class="guest-btn" onclick="backToLogin()" style="margin-top: 10px;">로그인으로 돌아가기</button>
+                </div>
+
+                <div id="auth-error" class="error-message"></div>
+                <div id="auth-success" class="success-message"></div>
             </div>
         </div>
 

@@ -10,10 +10,15 @@ from sentiment_analyzer import SentimentAnalyzer
 from file_processor import FileProcessor
 from expert_system import ExpertSystem
 from external_apis import ExternalAPIManager
+from email_service import EmailService
 import os
 import json
 import uuid
+import re
+import secrets
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # GPT API 연동 (선택적)
 try:
@@ -42,6 +47,7 @@ ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 # 데이터베이스 및 감정 분석기 초기화
 db = Database()
 sentiment_analyzer = SentimentAnalyzer()
+email_service = EmailService()
 
 def allowed_image_file(filename):
     """이미지 파일인지 확인"""
@@ -71,10 +77,18 @@ expert_system = ExpertSystem(
 print(f"[전문가 시스템] 초기화 완료 - GPT 사용: {USE_GPT}")
 
 
+# ==================== 라우트 ====================
+
 @app.route('/')
 def index():
     """메인 페이지"""
     return render_template('index.html', chatbot_name=Config.CHATBOT_NAME)
+
+
+@app.route('/reset-password')
+def reset_password_page():
+    """비밀번호 재설정 페이지"""
+    return render_template('reset_password.html')
 
 
 @app.route('/api/register', methods=['POST'])
@@ -145,6 +159,280 @@ def register_user():
         'stats': stats,
         'welcome_message': welcome_message
     })
+
+
+@app.route('/api/signup', methods=['POST'])
+def signup():
+    """회원가입 API"""
+    data = request.json
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '')
+
+    # 입력 검증
+    if not username or not email or not password:
+        return jsonify({'success': False, 'error': '모든 필드를 입력해주세요.'}), 400
+
+    # 이메일 형식 검증
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, email):
+        return jsonify({'success': False, 'error': '올바른 이메일 형식이 아닙니다.'}), 400
+
+    # 비밀번호 강도 검증 (최소 6자)
+    if len(password) < 6:
+        return jsonify({'success': False, 'error': '비밀번호는 최소 6자 이상이어야 합니다.'}), 400
+
+    # 사용자명 중복 확인
+    existing_user = db.get_user_by_username(username)
+    if existing_user:
+        return jsonify({'success': False, 'error': '이미 사용 중인 사용자명입니다.'}), 400
+
+    # 이메일 중복 확인
+    existing_email = db.get_user_by_email(email)
+    if existing_email:
+        return jsonify({'success': False, 'error': '이미 가입된 이메일입니다.'}), 400
+
+    # 비밀번호 해싱
+    password_hash = generate_password_hash(password)
+
+    # 사용자 생성
+    user_id = db.create_user(username, email, password_hash)
+
+    if user_id:
+        # 자동 로그인 (세션 설정)
+        session.permanent = True  # 영구 세션 활성화
+        session['user_id'] = user_id
+        session['username'] = username
+        session['email'] = email
+        db.update_last_login(user_id)
+
+        return jsonify({
+            'success': True,
+            'message': '회원가입이 완료되었습니다.',
+            'user': {
+                'id': user_id,
+                'username': username,
+                'email': email
+            }
+        })
+    else:
+        return jsonify({'success': False, 'error': '회원가입 중 오류가 발생했습니다.'}), 500
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """로그인 API"""
+    data = request.json
+    username_or_email = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    # 입력 검증
+    if not username_or_email or not password:
+        return jsonify({'success': False, 'error': '아이디와 비밀번호를 입력해주세요.'}), 400
+
+    # 이메일 또는 사용자명으로 조회
+    if '@' in username_or_email:
+        user = db.get_user_by_email(username_or_email)
+    else:
+        user = db.get_user_by_username(username_or_email)
+
+    # 사용자 확인 및 비밀번호 검증
+    if not user or not user.get('password_hash'):
+        return jsonify({'success': False, 'error': '아이디 또는 비밀번호가 올바르지 않습니다.'}), 401
+
+    if not check_password_hash(user['password_hash'], password):
+        return jsonify({'success': False, 'error': '아이디 또는 비밀번호가 올바르지 않습니다.'}), 401
+
+    # 로그인 성공 - 세션 설정
+    session.permanent = True  # 영구 세션 활성화
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['email'] = user['email']
+    db.update_last_login(user['id'])
+
+    # 이전 대화 이력 조회
+    history = db.get_user_history(user['id'])
+
+    # 첨부 파일 정보 처리
+    for msg in history:
+        if 'attachments' in msg and msg['attachments']:
+            msg['attached_files'] = []
+            for att in msg['attachments']:
+                parsed_info = att.get('parsed_info', {})
+                file_ext = parsed_info.get('extension', parsed_info.get('type', 'unknown'))
+                filename = att['filename']
+
+                file_info_dict = {
+                    'filename': filename,
+                    'size': parsed_info.get('size', att.get('file_size', 0)),
+                    'extension': file_ext,
+                    'is_image': parsed_info.get('is_image', False)
+                }
+
+                if parsed_info.get('url'):
+                    file_info_dict['url'] = parsed_info['url']
+                elif att.get('file_url'):
+                    file_info_dict['url'] = att['file_url']
+
+                if 'table_data' in parsed_info:
+                    file_info_dict['table_data'] = parsed_info['table_data']
+
+                msg['attached_files'].append(file_info_dict)
+
+    return jsonify({
+        'success': True,
+        'message': '로그인 되었습니다.',
+        'user': {
+            'id': user['id'],
+            'username': user['username'],
+            'email': user['email']
+        },
+        'history': history
+    })
+
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    """로그아웃 API"""
+    session.clear()
+    return jsonify({'success': True, 'message': '로그아웃 되었습니다.'})
+
+
+@app.route('/api/check-auth', methods=['GET'])
+def check_auth():
+    """로그인 상태 확인 API"""
+    if 'user_id' in session:
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': session['user_id'],
+                'username': session['username'],
+                'email': session.get('email', '')
+            }
+        })
+    else:
+        return jsonify({'authenticated': False})
+
+
+@app.route('/api/request-password-reset', methods=['POST'])
+def request_password_reset():
+    """비밀번호 재설정 요청 API"""
+    data = request.json
+    email = data.get('email', '').strip()
+
+    # 입력 검증
+    if not email:
+        return jsonify({'success': False, 'error': '이메일을 입력해주세요.'}), 400
+
+    # 이메일 형식 검증
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, email):
+        return jsonify({'success': False, 'error': '올바른 이메일 형식이 아닙니다.'}), 400
+
+    # 사용자 조회
+    user = db.get_user_by_email(email)
+
+    # 보안을 위해 이메일이 없어도 성공 메시지 반환 (이메일 노출 방지)
+    if not user:
+        return jsonify({
+            'success': True,
+            'message': '가입된 이메일이라면 비밀번호 재설정 링크가 발송되었습니다.'
+        })
+
+    # 재설정 토큰 생성 (32바이트 = 64자 hex)
+    reset_token = secrets.token_urlsafe(32)
+
+    # 토큰 만료 시간 (1시간)
+    expiry = datetime.now() + timedelta(hours=1)
+
+    # 토큰 저장
+    db.save_reset_token(email, reset_token, expiry.isoformat())
+
+    # 재설정 링크 생성
+    # 로컬 개발: http://localhost:5000
+    # 프로덕션: 환경변수에서 BASE_URL 가져오기
+    base_url = os.getenv('BASE_URL', 'http://localhost:5000')
+    reset_link = f"{base_url}/reset-password?token={reset_token}"
+
+    # 이메일 발송
+    email_sent = email_service.send_password_reset_email(email, reset_link, user['username'])
+
+    if email_sent:
+        return jsonify({
+            'success': True,
+            'message': '비밀번호 재설정 링크가 이메일로 발송되었습니다.'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': '이메일 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        }), 500
+
+
+@app.route('/api/verify-reset-token', methods=['POST'])
+def verify_reset_token():
+    """비밀번호 재설정 토큰 검증 API"""
+    data = request.json
+    token = data.get('token', '')
+
+    if not token:
+        return jsonify({'success': False, 'error': '유효하지 않은 토큰입니다.'}), 400
+
+    # 토큰 검증
+    user = db.verify_reset_token(token)
+
+    if not user:
+        return jsonify({
+            'success': False,
+            'error': '토큰이 만료되었거나 유효하지 않습니다.'
+        }), 400
+
+    return jsonify({
+        'success': True,
+        'username': user['username']
+    })
+
+
+@app.route('/api/reset-password', methods=['POST'])
+def reset_password():
+    """비밀번호 재설정 API"""
+    data = request.json
+    token = data.get('token', '')
+    new_password = data.get('password', '')
+
+    # 입력 검증
+    if not token or not new_password:
+        return jsonify({'success': False, 'error': '필수 정보가 누락되었습니다.'}), 400
+
+    # 비밀번호 강도 검증
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'error': '비밀번호는 최소 6자 이상이어야 합니다.'}), 400
+
+    # 토큰 검증
+    user = db.verify_reset_token(token)
+
+    if not user:
+        return jsonify({
+            'success': False,
+            'error': '토큰이 만료되었거나 유효하지 않습니다.'
+        }), 400
+
+    # 새 비밀번호 해싱
+    password_hash = generate_password_hash(new_password)
+
+    # 비밀번호 업데이트
+    success = db.update_password(user['id'], password_hash)
+
+    if success:
+        return jsonify({
+            'success': True,
+            'message': '비밀번호가 성공적으로 변경되었습니다.'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': '비밀번호 변경 중 오류가 발생했습니다.'
+        }), 500
 
 
 @app.route('/api/chat', methods=['POST'])

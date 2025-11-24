@@ -7,27 +7,402 @@ let selectedFiles = [];
 
 // 페이지 로드 시 실행
 document.addEventListener('DOMContentLoaded', function() {
-    // 저장된 사용자 정보 확인
-    const savedUsername = localStorage.getItem('chatbot_username');
-    if (savedUsername) {
-        // 저장된 사용자명으로 자동 로그인
-        autoLogin(savedUsername);
-    } else {
-        // Enter 키로 로그인
-        const usernameInput = document.getElementById('username-input');
-        if (usernameInput) {
-            usernameInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    loginUser();
-                }
-            });
-            usernameInput.focus();
-        }
-    }
+    // 로그인 상태 확인
+    checkAuthStatus();
 
     // 드래그 앤 드롭 설정
     setupDragAndDrop();
 });
+
+/**
+ * 로그인 상태 확인
+ */
+async function checkAuthStatus() {
+    try {
+        const response = await fetch('/api/check-auth');
+        const data = await response.json();
+
+        if (data.authenticated) {
+            // 이미 로그인된 경우
+            currentUser = data.user;
+            showChatScreen(data.user.username);
+            loadChatHistory();
+        } else {
+            // 로그인 안 된 경우
+            showLoginScreen();
+        }
+    } catch (error) {
+        console.error('인증 확인 오류:', error);
+        showLoginScreen();
+    }
+}
+
+/**
+ * 로그인 화면 표시
+ */
+function showLoginScreen() {
+    document.getElementById('login-screen').classList.add('active');
+    document.getElementById('chat-screen').classList.remove('active');
+
+    // 로그인 탭에 포커스
+    const loginUsernameInput = document.getElementById('login-username');
+    if (loginUsernameInput) {
+        setTimeout(() => loginUsernameInput.focus(), 100);
+    }
+}
+
+/**
+ * 인증 탭 전환
+ */
+function switchAuthTab(tab) {
+    const loginTab = document.querySelector('.auth-tab:first-child');
+    const signupTab = document.querySelector('.auth-tab:last-child');
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const forgotPasswordForm = document.getElementById('forgot-password-form');
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    // 에러/성공 메시지 초기화
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    if (tab === 'login') {
+        loginTab.classList.add('active');
+        signupTab.classList.remove('active');
+        loginForm.classList.add('active');
+        signupForm.classList.remove('active');
+        forgotPasswordForm.classList.remove('active');
+        setTimeout(() => document.getElementById('login-username').focus(), 100);
+    } else {
+        loginTab.classList.remove('active');
+        signupTab.classList.add('active');
+        loginForm.classList.remove('active');
+        signupForm.classList.add('active');
+        forgotPasswordForm.classList.remove('active');
+        setTimeout(() => document.getElementById('signup-username').focus(), 100);
+    }
+}
+
+/**
+ * 비밀번호 찾기 화면 표시
+ */
+function showForgotPassword(event) {
+    event.preventDefault();
+
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const forgotPasswordForm = document.getElementById('forgot-password-form');
+    const loginTab = document.querySelector('.auth-tab:first-child');
+    const signupTab = document.querySelector('.auth-tab:last-child');
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    // 에러/성공 메시지 초기화
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    // 탭 비활성화
+    loginTab.classList.remove('active');
+    signupTab.classList.remove('active');
+
+    // 폼 전환
+    loginForm.classList.remove('active');
+    signupForm.classList.remove('active');
+    forgotPasswordForm.classList.add('active');
+
+    setTimeout(() => document.getElementById('forgot-email').focus(), 100);
+}
+
+/**
+ * 로그인 화면으로 돌아가기
+ */
+function backToLogin() {
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const forgotPasswordForm = document.getElementById('forgot-password-form');
+    const loginTab = document.querySelector('.auth-tab:first-child');
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    // 에러/성공 메시지 초기화
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    // 로그인 탭 활성화
+    loginTab.classList.add('active');
+
+    // 폼 전환
+    forgotPasswordForm.classList.remove('active');
+    loginForm.classList.add('active');
+    signupForm.classList.remove('active');
+
+    setTimeout(() => document.getElementById('login-username').focus(), 100);
+}
+
+/**
+ * 비밀번호 찾기 처리
+ */
+async function handleForgotPassword() {
+    const email = document.getElementById('forgot-email').value.trim();
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    if (!email) {
+        errorMsg.textContent = '이메일을 입력해주세요.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/request-password-reset', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            successMsg.textContent = data.message;
+            document.getElementById('forgot-email').value = '';
+        } else {
+            errorMsg.textContent = data.error || '오류가 발생했습니다.';
+        }
+    } catch (error) {
+        console.error('비밀번호 찾기 오류:', error);
+        errorMsg.textContent = '서버와의 통신에 실패했습니다.';
+    }
+}
+
+/**
+ * 비밀번호 찾기 엔터키 처리
+ */
+function handleForgotPasswordKeyPress(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        handleForgotPassword();
+    }
+}
+
+/**
+ * 로그인 처리
+ */
+async function handleLogin() {
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    if (!username || !password) {
+        errorMsg.textContent = '아이디와 비밀번호를 입력해주세요.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            currentUser = data.user;
+            successMsg.textContent = data.message;
+            setTimeout(() => {
+                showChatScreen(data.user.username);
+                loadHistoryFromLoginResponse(data.history);
+            }, 500);
+        } else {
+            errorMsg.textContent = data.error;
+        }
+    } catch (error) {
+        console.error('로그인 오류:', error);
+        errorMsg.textContent = '로그인 중 오류가 발생했습니다.';
+    }
+}
+
+/**
+ * 회원가입 처리
+ */
+async function handleSignup() {
+    const username = document.getElementById('signup-username').value.trim();
+    const email = document.getElementById('signup-email').value.trim();
+    const password = document.getElementById('signup-password').value;
+    const passwordConfirm = document.getElementById('signup-password-confirm').value;
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    if (!username || !email || !password || !passwordConfirm) {
+        errorMsg.textContent = '모든 필드를 입력해주세요.';
+        return;
+    }
+
+    if (password !== passwordConfirm) {
+        errorMsg.textContent = '비밀번호가 일치하지 않습니다.';
+        return;
+    }
+
+    if (password.length < 6) {
+        errorMsg.textContent = '비밀번호는 최소 6자 이상이어야 합니다.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email, password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            currentUser = data.user;
+            successMsg.textContent = data.message;
+            setTimeout(() => {
+                showChatScreen(data.user.username);
+            }, 500);
+        } else {
+            errorMsg.textContent = data.error;
+        }
+    } catch (error) {
+        console.error('회원가입 오류:', error);
+        errorMsg.textContent = '회원가입 중 오류가 발생했습니다.';
+    }
+}
+
+/**
+ * 게스트 로그인
+ */
+async function guestLogin() {
+    const guestUsername = 'Guest_' + Math.random().toString(36).substring(2, 8);
+
+    try {
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: guestUsername })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || '게스트 로그인 실패');
+        }
+
+        currentUser = { username: data.username };
+        showChatScreen(data.username);
+        loadHistoryFromLoginResponse(data.history);
+    } catch (error) {
+        console.error('게스트 로그인 오류:', error);
+        document.getElementById('auth-error').textContent = '게스트 로그인 중 오류가 발생했습니다.';
+    }
+}
+
+/**
+ * Enter 키 처리 (로그인)
+ */
+function handleLoginKeyPress(event) {
+    if (event.key === 'Enter') {
+        handleLogin();
+    }
+}
+
+/**
+ * Enter 키 처리 (회원가입)
+ */
+function handleSignupKeyPress(event) {
+    if (event.key === 'Enter') {
+        handleSignup();
+    }
+}
+
+/**
+ * 채팅 화면 표시
+ */
+function showChatScreen(username) {
+    document.getElementById('login-screen').classList.remove('active');
+    document.getElementById('chat-screen').classList.add('active');
+    document.getElementById('user-info').textContent = `👤 ${username}`;
+
+    // 메시지 입력창에 포커스
+    setTimeout(() => {
+        const messageInput = document.getElementById('message-input');
+        if (messageInput) messageInput.focus();
+    }, 100);
+}
+
+/**
+ * 로그인 응답에서 히스토리 로드
+ */
+function loadHistoryFromLoginResponse(history) {
+    if (!history || history.length === 0) return;
+
+    const messagesDiv = document.getElementById('chat-messages');
+    messagesDiv.innerHTML = ''; // 기존 메시지 제거
+
+    // 역순으로 메시지 표시 (오래된 것부터)
+    history.reverse().forEach(msg => {
+        if (msg.is_user) {
+            addUserMessage(msg.message, false);
+        } else {
+            addBotMessage(msg.message, false);
+        }
+
+        // 첨부 파일이 있으면 표시
+        if (msg.attached_files && msg.attached_files.length > 0) {
+            msg.attached_files.forEach(file => {
+                // 파일 정보를 메시지에 추가
+                console.log('첨부파일:', file.filename);
+            });
+        }
+    });
+
+    scrollToBottom();
+}
+
+/**
+ * 로그아웃
+ */
+async function logout() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+        currentUser = null;
+        localStorage.removeItem('chatbot_username');
+
+        // 채팅 화면 초기화
+        document.getElementById('chat-messages').innerHTML = '<div class="welcome-message"><p>안녕하세요! 무엇을 도와드릴까요?</p></div>';
+
+        // 로그인 화면으로 전환
+        showLoginScreen();
+
+        // 폼 초기화
+        document.getElementById('login-username').value = '';
+        document.getElementById('login-password').value = '';
+        document.getElementById('signup-username').value = '';
+        document.getElementById('signup-email').value = '';
+        document.getElementById('signup-password').value = '';
+        document.getElementById('signup-password-confirm').value = '';
+
+        // 로그인 탭으로 전환
+        switchAuthTab('login');
+    } catch (error) {
+        console.error('로그아웃 오류:', error);
+    }
+}
 
 /**
  * 드래그 앤 드롭 기능 설정
@@ -149,135 +524,26 @@ function handleDroppedFiles(files) {
     fileInput.dispatchEvent(event);
 }
 
+// 기존 로그인 관련 함수들은 새로운 인증 시스템으로 대체되었습니다.
+
 /**
- * 사용자 로그인
+ * 히스토리 로드 (호환성 유지)
  */
-async function loginUser() {
-    const username = document.getElementById('username-input').value.trim();
-    const errorDiv = document.getElementById('login-error');
-
-    if (!username) {
-        errorDiv.textContent = '이름을 입력해주세요.';
-        return;
-    }
-
-    errorDiv.textContent = '';
-
+async function loadChatHistory() {
     try {
-        const response = await fetch('/api/register', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            errorDiv.textContent = error.error || '로그인 중 오류가 발생했습니다.';
-            return;
-        }
+        const response = await fetch('/api/history');
+        if (!response.ok) return;
 
         const data = await response.json();
-        currentUser = data;
-
-        // localStorage에 사용자명 저장
-        localStorage.setItem('chatbot_username', data.username);
-
-        // 채팅 화면 표시
-        displayChatScreen(data);
-
-    } catch (error) {
-        console.error('Login error:', error);
-        errorDiv.textContent = '서버 연결 중 오류가 발생했습니다.';
-    }
-}
-
-/**
- * 자동 로그인
- */
-async function autoLogin(username) {
-    try {
-        const response = await fetch('/api/register', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username })
-        });
-
-        if (!response.ok) {
-            // 자동 로그인 실패 시 localStorage 삭제하고 로그인 화면으로
-            localStorage.removeItem('chatbot_username');
-            return;
+        if (data.history && data.history.length > 0) {
+            loadHistoryFromLoginResponse(data.history);
         }
-
-        const data = await response.json();
-        currentUser = data;
-
-        // 채팅 화면 표시
-        displayChatScreen(data);
-
     } catch (error) {
-        console.error('Auto login error:', error);
-        // 오류 발생 시 localStorage 삭제
-        localStorage.removeItem('chatbot_username');
+        console.error('히스토리 로드 오류:', error);
     }
 }
 
-/**
- * 채팅 화면 표시
- */
-function displayChatScreen(data) {
-    // 채팅 화면으로 전환
-    switchScreen('chat-screen');
-
-    // 사용자 정보 표시
-    document.getElementById('user-info').textContent = `${data.username}님 환영합니다`;
-
-    // 메시지 영역 초기화
-    const messagesDiv = document.getElementById('chat-messages');
-    messagesDiv.innerHTML = '';
-
-    // 환영 메시지 표시
-    addBotMessage(data.welcome_message);
-
-    // 이전 대화 이력 표시
-    if (data.history && data.history.length > 0) {
-        data.history.forEach(msg => {
-            if (msg.is_user) {
-                // 사용자 메시지 표시
-                const tempId = Date.now() + Math.random();
-
-                // 첨부 파일이 있는 경우와 없는 경우를 구분하여 처리
-                if (msg.attached_files && msg.attached_files.length > 0) {
-                    // 메시지가 있으면 메시지 먼저 추가, 없으면 빈 메시지로 추가
-                    addUserMessageWithHistory(msg.message || '', msg.attached_files, tempId, false);
-                } else {
-                    // 첨부 파일이 없으면 일반 메시지만 표시
-                    addUserMessage(msg.message, [], tempId, false);
-                }
-            } else {
-                addBotMessage(msg.message, false);
-            }
-        });
-    }
-
-    // 입력창에 포커스
-    document.getElementById('message-input').focus();
-}
-
-/**
- * 로그아웃
- */
-function logout() {
-    if (confirm('로그아웃하시겠습니까?')) {
-        currentUser = null;
-        localStorage.removeItem('chatbot_username');
-        document.getElementById('username-input').value = '';
-        switchScreen('login-screen');
-    }
-}
+// 기존 logout, loginUser, autoLogin 함수들은 삭제되고 새 버전으로 대체되었습니다.
 
 /**
  * 화면 전환
@@ -575,8 +841,11 @@ function addBotMessage(message, scroll = true) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message bot';
 
+    // HTML 포함 여부 확인 (뉴스, 표 등)
+    const containsHtml = message.includes('<') && message.includes('>');
+
     messageDiv.innerHTML = `
-        <div class="message-content">${escapeHtml(message)}</div>
+        <div class="message-content">${containsHtml ? message : escapeHtml(message)}</div>
         <div class="message-time">${getCurrentTime()}</div>
     `;
 

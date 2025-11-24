@@ -26,7 +26,12 @@ class Database:
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                email TEXT UNIQUE,
+                password_hash TEXT,
+                reset_token TEXT,
+                reset_token_expiry TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
             )
         ''')
 
@@ -62,7 +67,7 @@ class Database:
         conn.close()
 
     def get_or_create_user(self, username):
-        """사용자 조회 또는 생성"""
+        """사용자 조회 또는 생성 (기존 호환성 유지)"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
@@ -80,6 +85,64 @@ class Database:
 
         conn.close()
         return user_id
+
+    def create_user(self, username, email, password_hash):
+        """신규 사용자 생성 (회원가입)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                INSERT INTO users (username, email, password_hash)
+                VALUES (?, ?, ?)
+            ''', (username, email, password_hash))
+            conn.commit()
+            user_id = cursor.lastrowid
+            conn.close()
+            return user_id
+        except sqlite3.IntegrityError:
+            conn.close()
+            return None  # 중복된 username 또는 email
+
+    def get_user_by_username(self, username):
+        """username으로 사용자 정보 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, username, email, password_hash, created_at, last_login
+            FROM users WHERE username = ?
+        ''', (username,))
+        user = cursor.fetchone()
+        conn.close()
+
+        return dict(user) if user else None
+
+    def get_user_by_email(self, email):
+        """email로 사용자 정보 조회"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, username, email, password_hash, created_at, last_login
+            FROM users WHERE email = ?
+        ''', (email,))
+        user = cursor.fetchone()
+        conn.close()
+
+        return dict(user) if user else None
+
+    def update_last_login(self, user_id):
+        """마지막 로그인 시간 업데이트"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE users SET last_login = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (user_id,))
+        conn.commit()
+        conn.close()
 
     def save_message(self, user_id, message, is_user, sentiment=None):
         """메시지 저장"""
@@ -180,3 +243,62 @@ class Database:
         conn.close()
 
         return dict(stats) if stats else None
+
+    def save_reset_token(self, email, token, expiry):
+        """비밀번호 재설정 토큰 저장"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE users
+            SET reset_token = ?, reset_token_expiry = ?
+            WHERE email = ?
+        ''', (token, expiry, email))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
+
+    def verify_reset_token(self, token):
+        """토큰 검증 및 사용자 정보 반환"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, username, email, reset_token_expiry
+            FROM users
+            WHERE reset_token = ?
+        ''', (token,))
+
+        user = cursor.fetchone()
+        conn.close()
+
+        if not user:
+            return None
+
+        user_dict = dict(user)
+
+        # 토큰 만료 확인
+        from datetime import datetime
+        expiry = datetime.fromisoformat(user_dict['reset_token_expiry'])
+        if datetime.now() > expiry:
+            return None
+
+        return user_dict
+
+    def update_password(self, user_id, new_password_hash):
+        """비밀번호 업데이트 및 토큰 삭제"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            UPDATE users
+            SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL
+            WHERE id = ?
+        ''', (new_password_hash, user_id))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
