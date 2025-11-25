@@ -7,7 +7,7 @@ from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 class EmailService:
     def __init__(self):
