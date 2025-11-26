@@ -739,6 +739,23 @@ class WeatherAPI:
         clean_text = text.replace(' ', '').replace(',', '')
         sorted_keys = sorted(self.korean_cities.keys(), key=len, reverse=True)
 
+        # 2단계 매칭: 먼저 도시명만 추출 (도 이름 제외)
+        # 예: "제주도서귀포시" → "서귀포시" 우선
+        # 예: "경기도광명시" → "광명시" 우선
+
+        # 1단계: 도 이름이 없는 순수 도시명 찾기 (우선순위 높음)
+        for key in sorted_keys:
+            if key in clean_text:
+                # "도"가 앞에 붙지 않은 순수 도시명
+                # 예: "서귀포시", "광명시", "부산", "서울" 등
+                if not any(province in key for province in ['경기도', '강원도', '충청북도', '충청남도', '충북', '충남',
+                                                              '전라북도', '전라남도', '전북', '전남', '경상북도', '경상남도',
+                                                              '경북', '경남', '제주도', '제주특별자치도']):
+                    # 단, 단순히 "도"로 끝나는 광역시/도는 제외 (강원도, 경기도 등)
+                    if not (key.endswith('도') and len(key) <= 4):
+                        return key
+
+        # 2단계: 도 이름 포함된 경우도 매칭 (fallback)
         for key in sorted_keys:
             if key in clean_text:
                 return key
