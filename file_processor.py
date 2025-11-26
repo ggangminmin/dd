@@ -7,7 +7,13 @@ import io
 import json
 import base64
 from PIL import Image
-from PyPDF2 import PdfReader
+try:
+    from pypdf import PdfReader  # PyPDF2 3.0+ (pypdf로 변경됨)
+except ImportError:
+    try:
+        from PyPDF2 import PdfReader  # PyPDF2 구버전 호환성
+    except ImportError:
+        PdfReader = None  # PDF 처리 불가능
 from docx import Document
 import openpyxl
 import pandas as pd
@@ -79,6 +85,12 @@ class FileProcessor:
     @staticmethod
     def process_pdf(file_data, filename):
         """PDF 파일 처리"""
+        if PdfReader is None:
+            return {
+                'success': False,
+                'error': 'PDF 처리 라이브러리가 설치되지 않았습니다. pypdf 또는 PyPDF2를 설치해주세요.'
+            }
+
         try:
             pdf_file = io.BytesIO(file_data)
             reader = PdfReader(pdf_file)
@@ -98,6 +110,9 @@ class FileProcessor:
                 'has_image': False
             }
         except Exception as e:
+            import traceback
+            print(f"[PDF 처리 오류] {filename}: {str(e)}")
+            traceback.print_exc()
             return {
                 'success': False,
                 'error': f"PDF 처리 오류: {str(e)}"
