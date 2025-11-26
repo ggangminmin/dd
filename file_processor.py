@@ -30,8 +30,8 @@ class FileProcessor:
         'data': ['.json', '.xml']
     }
 
-    # 최대 파일 크기 (20MB)
-    MAX_FILE_SIZE = 20 * 1024 * 1024
+    # 최대 파일 크기 (100MB)
+    MAX_FILE_SIZE = 100 * 1024 * 1024
 
     @staticmethod
     def is_supported(filename):
@@ -305,7 +305,7 @@ class FileProcessor:
         if len(file_data) > FileProcessor.MAX_FILE_SIZE:
             return {
                 'success': False,
-                'error': '파일 크기가 너무 큽니다 (최대 20MB)'
+                'error': '파일 크기가 너무 큽니다 (최대 100MB)'
             }
 
         # 확장자별 처리
