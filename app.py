@@ -779,6 +779,76 @@ def get_expert_status():
     })
 
 
+@app.route('/api/delete-history', methods=['POST'])
+def delete_history():
+    """대화 기록 삭제 API"""
+    user_id = session.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        deleted_count = db.delete_all_messages(user_id)
+        return jsonify({
+            'success': True,
+            'message': f'{deleted_count}개의 메시지가 삭제되었습니다.',
+            'deleted_count': deleted_count
+        })
+    except Exception as e:
+        print(f"[대화 삭제 오류] {str(e)}")
+        return jsonify({'error': '대화 삭제 중 오류가 발생했습니다.'}), 500
+
+
+@app.route('/api/export-history', methods=['GET'])
+def export_history():
+    """대화 기록 내보내기 API"""
+    user_id = session.get('user_id')
+
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    format_type = request.args.get('format', 'json')  # json 또는 txt
+
+    try:
+        history = db.get_user_history(user_id, limit=10000)  # 전체 이력
+
+        if format_type == 'txt':
+            # 텍스트 형식으로 변환
+            output = f"대화 기록 - {session.get('username')}\n"
+            output += "=" * 50 + "\n\n"
+
+            for msg in history:
+                timestamp = msg.get('timestamp', '')
+                role = '사용자' if msg.get('is_user') else '챗봇'
+                message = msg.get('message', '')
+                sentiment = msg.get('sentiment', '')
+
+                output += f"[{timestamp}] {role}"
+                if sentiment and msg.get('is_user'):
+                    output += f" (감정: {sentiment})"
+                output += f"\n{message}\n\n"
+
+            return output, 200, {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Content-Disposition': f'attachment; filename="chat_history_{session.get("username")}.txt"'
+            }
+        else:
+            # JSON 형식으로 반환
+            export_data = {
+                'username': session.get('username'),
+                'export_date': datetime.now().isoformat(),
+                'total_messages': len(history),
+                'history': history
+            }
+
+            return jsonify(export_data), 200, {
+                'Content-Disposition': f'attachment; filename="chat_history_{session.get("username")}.json"'
+            }
+    except Exception as e:
+        print(f"[대화 내보내기 오류] {str(e)}")
+        return jsonify({'error': '대화 내보내기 중 오류가 발생했습니다.'}), 500
+
+
 if __name__ == '__main__':
     # 로컬 개발 환경에서만 실행
     if not IS_VERCEL:

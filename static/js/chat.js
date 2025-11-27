@@ -357,17 +357,10 @@ function loadHistoryFromLoginResponse(history) {
     // 역순으로 메시지 표시 (오래된 것부터)
     history.reverse().forEach(msg => {
         if (msg.is_user) {
-            addUserMessage(msg.message, false);
+            // 사용자 메시지: 첨부 파일도 함께 표시
+            addUserMessage(msg.message || "", msg.attached_files || [], null, false);
         } else {
             addBotMessage(msg.message, false);
-        }
-
-        // 첨부 파일이 있으면 표시
-        if (msg.attached_files && msg.attached_files.length > 0) {
-            msg.attached_files.forEach(file => {
-                // 파일 정보를 메시지에 추가
-                console.log('첨부파일:', file.filename);
-            });
         }
     });
 
@@ -1229,3 +1222,47 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+/**
+ * 대화 기록 삭제
+ */
+async function deleteHistory() {
+    if (!confirm('정말로 모든 대화 기록을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/delete-history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert(data.message);
+            // 화면의 메시지 제거
+            document.getElementById('chat-messages').innerHTML = '<div class="welcome-message">대화 기록이 삭제되었습니다.</div>';
+        } else {
+            alert(data.error || '대화 삭제 중 오류가 발생했습니다.');
+        }
+    } catch (error) {
+        console.error('대화 삭제 오류:', error);
+        alert('서버와의 통신에 실패했습니다.');
+    }
+}
+
+/**
+ * 대화 기록 내보내기
+ */
+async function exportHistory(format = 'json') {
+    try {
+        // JSON 또는 TXT 다운로드
+        window.location.href = `/api/export-history?format=${format}`;
+    } catch (error) {
+        console.error('대화 내보내기 오류:', error);
+        alert('대화 내보내기 중 오류가 발생했습니다.');
+    }
+}

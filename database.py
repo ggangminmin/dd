@@ -302,3 +302,48 @@ class Database:
         affected = cursor.rowcount
         conn.close()
         return affected > 0
+
+    def delete_all_messages(self, user_id):
+        """사용자의 모든 대화 기록 삭제"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # 먼저 첨부 파일 정보 삭제
+        cursor.execute('''
+            DELETE FROM file_attachments
+            WHERE message_id IN (
+                SELECT id FROM chat_history WHERE user_id = ?
+            )
+        ''', (user_id,))
+
+        # 대화 기록 삭제
+        cursor.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected
+
+    def delete_message(self, message_id, user_id):
+        """특정 메시지 삭제 (사용자 확인 포함)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # 먼저 해당 메시지가 해당 사용자의 것인지 확인
+        cursor.execute('SELECT user_id FROM chat_history WHERE id = ?', (message_id,))
+        result = cursor.fetchone()
+
+        if not result or result['user_id'] != user_id:
+            conn.close()
+            return False
+
+        # 첨부 파일 정보 삭제
+        cursor.execute('DELETE FROM file_attachments WHERE message_id = ?', (message_id,))
+
+        # 메시지 삭제
+        cursor.execute('DELETE FROM chat_history WHERE id = ?', (message_id,))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+        return affected > 0
