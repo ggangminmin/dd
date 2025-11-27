@@ -510,9 +510,12 @@ def chat():
 
                 # URL 생성 (서버리스 환경 대응)
                 if IS_VERCEL:
-                    # Vercel 환경에서는 /tmp가 휘발성이므로 URL 생성하지 않음
-                    # 실제 운영 환경에서는 S3, Cloudinary 등의 클라우드 스토리지 사용 권장
-                    file_url = None  # 임시: 파일 URL 사용 불가
+                    # Vercel 환경에서는 base64 데이터 URL 사용
+                    if allowed_image_file(file.filename):
+                        import base64
+                        file_url = f"data:image/{ext};base64,{base64.b64encode(file_data).decode()}"
+                    else:
+                        file_url = None
                 else:
                     file_url = f"/static/uploads/{unique_filename}"
 
