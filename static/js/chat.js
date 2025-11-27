@@ -357,8 +357,12 @@ function loadHistoryFromLoginResponse(history) {
     // 역순으로 메시지 표시 (오래된 것부터)
     history.reverse().forEach(msg => {
         if (msg.is_user) {
-            // 사용자 메시지: 첨부 파일도 함께 표시
-            addUserMessage(msg.message || "", msg.attached_files || [], null, false);
+            // 사용자 메시지: 첨부 파일이 있으면 전용 함수 사용
+            if (msg.attached_files && msg.attached_files.length > 0) {
+                addUserMessageWithHistory(msg.message || "", msg.attached_files, msg.id, false);
+            } else {
+                addUserMessage(msg.message || "", [], msg.id, false);
+            }
         } else {
             addBotMessage(msg.message, false);
         }
