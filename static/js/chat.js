@@ -55,11 +55,11 @@ function showLoginScreen() {
  * 인증 탭 전환
  */
 function switchAuthTab(tab) {
-    const loginTab = document.querySelector('.auth-tab:first-child');
-    const signupTab = document.querySelector('.auth-tab:last-child');
+    const tabs = document.querySelectorAll('.auth-tab');
     const loginForm = document.getElementById('login-form');
     const signupForm = document.getElementById('signup-form');
     const forgotPasswordForm = document.getElementById('forgot-password-form');
+    const deleteAccountForm = document.getElementById('delete-account-form');
     const errorMsg = document.getElementById('auth-error');
     const successMsg = document.getElementById('auth-success');
 
@@ -67,20 +67,25 @@ function switchAuthTab(tab) {
     errorMsg.textContent = '';
     successMsg.textContent = '';
 
+    // 모든 탭과 폼 비활성화
+    tabs.forEach(t => t.classList.remove('active'));
+    loginForm.classList.remove('active');
+    signupForm.classList.remove('active');
+    forgotPasswordForm.classList.remove('active');
+    deleteAccountForm.classList.remove('active');
+
     if (tab === 'login') {
-        loginTab.classList.add('active');
-        signupTab.classList.remove('active');
+        tabs[0].classList.add('active');
         loginForm.classList.add('active');
-        signupForm.classList.remove('active');
-        forgotPasswordForm.classList.remove('active');
         setTimeout(() => document.getElementById('login-username').focus(), 100);
-    } else {
-        loginTab.classList.remove('active');
-        signupTab.classList.add('active');
-        loginForm.classList.remove('active');
+    } else if (tab === 'signup') {
+        tabs[1].classList.add('active');
         signupForm.classList.add('active');
-        forgotPasswordForm.classList.remove('active');
         setTimeout(() => document.getElementById('signup-username').focus(), 100);
+    } else if (tab === 'delete') {
+        tabs[2].classList.add('active');
+        deleteAccountForm.classList.add('active');
+        setTimeout(() => document.getElementById('delete-username').focus(), 100);
     }
 }
 
@@ -190,6 +195,72 @@ function handleForgotPasswordKeyPress(event) {
 }
 
 /**
+ * 회원탈퇴 엔터키 처리
+ */
+function handleDeleteAccountKeyPress(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        handleDeleteAccount();
+    }
+}
+
+/**
+ * 회원탈퇴 처리
+ */
+async function handleDeleteAccount() {
+    const username = document.getElementById('delete-username').value.trim();
+    const password = document.getElementById('delete-password').value;
+    const checkbox = document.getElementById('delete-confirm-checkbox').checked;
+    const errorMsg = document.getElementById('auth-error');
+    const successMsg = document.getElementById('auth-success');
+
+    errorMsg.textContent = '';
+    successMsg.textContent = '';
+
+    if (!username || !password) {
+        errorMsg.textContent = '아이디와 비밀번호를 입력해주세요.';
+        return;
+    }
+
+    if (!checkbox) {
+        errorMsg.textContent = '데이터 삭제 동의에 체크해주세요.';
+        return;
+    }
+
+    // 최종 확인
+    if (!confirm('정말로 계정을 삭제하시겠습니까?\n모든 데이터가 영구적으로 삭제되며 복구할 수 없습니다.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/delete-account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            successMsg.textContent = '계정이 삭제되었습니다. 이용해 주셔서 감사합니다.';
+            // 입력 필드 초기화
+            document.getElementById('delete-username').value = '';
+            document.getElementById('delete-password').value = '';
+            document.getElementById('delete-confirm-checkbox').checked = false;
+            // 3초 후 로그인 탭으로 이동
+            setTimeout(() => {
+                switchAuthTab('login');
+            }, 3000);
+        } else {
+            errorMsg.textContent = data.error || '계정 삭제에 실패했습니다.';
+        }
+    } catch (error) {
+        console.error('계정 삭제 오류:', error);
+        errorMsg.textContent = '계정 삭제 중 오류가 발생했습니다.';
+    }
+}
+
+/**
  * 로그인 처리
  */
 async function handleLogin() {
@@ -221,6 +292,7 @@ async function handleLogin() {
             setTimeout(() => {
                 showChatScreen(data.user.username);
                 loadHistoryFromLoginResponse(data.history);
+                loadUserPreferences(); // 사용자 설정 로드
             }, 500);
         } else {
             errorMsg.textContent = data.error;
@@ -354,8 +426,28 @@ function loadHistoryFromLoginResponse(history) {
     const messagesDiv = document.getElementById('chat-messages');
     messagesDiv.innerHTML = ''; // 기존 메시지 제거
 
-    // 역순으로 메시지 표시 (오래된 것부터)
-    history.reverse().forEach(msg => {
+    // 메시지 정렬: createdAt 오름차순, 같은 시각이면 파일 첨부 메시지가 뒤로
+    const sortedHistory = [...history].sort((a, b) => {
+        // 1. timestamp 기준 오름차순 (오래된 것부터)
+        const timeA = new Date(a.timestamp).getTime();
+        const timeB = new Date(b.timestamp).getTime();
+
+        if (timeA !== timeB) {
+            return timeA - timeB;
+        }
+
+        // 2. 같은 시각이면 파일 첨부 메시지가 뒤로
+        const hasAttachmentA = !!(a.attached_files && a.attached_files.length > 0);
+        const hasAttachmentB = !!(b.attached_files && b.attached_files.length > 0);
+
+        if (hasAttachmentA && !hasAttachmentB) return 1;
+        if (!hasAttachmentA && hasAttachmentB) return -1;
+
+        return 0;
+    });
+
+    // 정렬된 메시지 표시
+    sortedHistory.forEach(msg => {
         if (msg.is_user) {
             // 사용자 메시지: 첨부 파일이 있으면 전용 함수 사용
             if (msg.attached_files && msg.attached_files.length > 0) {
@@ -716,7 +808,11 @@ function addUserMessageWithHistory(message, attachedFiles, messageId, scroll = t
     if (images.length > 0) {
         contentHtml += '<div class="message-images">';
         images.forEach(file => {
-            contentHtml += `<img src="${file.url}" alt="${file.filename}" class="message-image">`;
+            // base64 데이터가 있으면 사용, 없으면 URL 사용
+            const imageSrc = file.base64
+                ? `data:image/${(file.format || 'png').toLowerCase()};base64,${file.base64}`
+                : file.url;
+            contentHtml += `<img src="${imageSrc}" alt="${file.filename}" class="message-image">`;
         });
         contentHtml += '</div>';
     }
@@ -957,112 +1053,6 @@ function closeHistory() {
 }
 
 /**
- * 전문가 시스템 상태 표시
- */
-async function showExpertStatus() {
-    try {
-        const response = await fetch('/api/expert-status');
-        if (!response.ok) throw new Error('전문가 상태 조회 실패');
-
-        const data = await response.json();
-        const modal = document.getElementById('expert-modal');
-        const content = document.getElementById('expert-content');
-
-        const progress = (data.conversation_count / data.auto_summarize_interval) * 100;
-
-        let html = `
-            <div class="expert-section">
-                <h4>💬 메세징 전문가</h4>
-                <p>고객 질문에 감정 기반으로 자연스럽게 응답합니다.</p>
-                <div class="expert-status">
-                    <span class="status-badge active">활성</span>
-                    <span>GPT ${data.gpt_enabled ? '사용 중' : '미사용'}</span>
-                </div>
-            </div>
-
-            <div class="expert-section">
-                <h4>📢 마케팅 전문가</h4>
-                <p>긍정적 반응 감지 시 자연스러운 CTA를 제안합니다.</p>
-                <div class="expert-status">
-                    <span class="status-badge active">활성</span>
-                    <span>긍정 신호 모니터링 중</span>
-                </div>
-            </div>
-
-            <div class="expert-section">
-                <h4>📝 문서작성 전문가</h4>
-                <p>대화 내용을 자동으로 분석하고 FAQ를 생성합니다.</p>
-                <div class="expert-status">
-                    <span class="status-badge active">활성</span>
-                    <span>대화 버퍼: ${data.conversation_count}/${data.auto_summarize_interval}개</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${progress}%"></div>
-                </div>
-                <p class="progress-text">${data.auto_summarize_interval - data.conversation_count}개 대화 후 자동 요약</p>
-            </div>
-
-            <div class="expert-section">
-                <h4>🔄 협업 워크플로우</h4>
-                <ol class="workflow-list">
-                    <li>고객 질문 → <strong>메세징 전문가</strong>가 감정 분석 후 1차 응답</li>
-                    <li>긍정 신호 감지 → <strong>마케팅 전문가</strong>가 CTA 추가</li>
-                    <li>대화 진행 → <strong>문서작성 전문가</strong>가 자동 기록</li>
-                    <li>${data.auto_summarize_interval}개 대화 완료 → 자동으로 FAQ 생성 및 저장</li>
-                </ol>
-            </div>
-
-            <div class="expert-actions">
-                <button onclick="manualSummarize()" class="summarize-btn">📄 지금 요약하기</button>
-            </div>
-        `;
-
-        content.innerHTML = html;
-        modal.classList.add('active');
-
-    } catch (error) {
-        console.error('Expert status error:', error);
-        alert('전문가 상태를 불러오는 중 오류가 발생했습니다.');
-    }
-}
-
-/**
- * 전문가 시스템 모달 닫기
- */
-function closeExpertStatus() {
-    document.getElementById('expert-modal').classList.remove('active');
-}
-
-/**
- * 수동 요약 트리거
- */
-async function manualSummarize() {
-    if (!confirm('현재까지의 대화 내용을 요약하시겠습니까?')) {
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/summarize', {
-            method: 'POST'
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            alert('✅ ' + data.message + '\n\n주제: ' + data.summary.main_topic);
-            closeExpertStatus();
-            // 상태 새로고침
-            setTimeout(() => showExpertStatus(), 500);
-        } else {
-            alert('⚠️ ' + data.message);
-        }
-    } catch (error) {
-        console.error('Summarize error:', error);
-        alert('요약 중 오류가 발생했습니다.');
-    }
-}
-
-/**
  * 키 입력 처리
  */
 function handleKeyPress(event) {
@@ -1258,15 +1248,50 @@ async function deleteHistory() {
     }
 }
 
+// ==================== 테마 관리 ====================
+
 /**
- * 대화 기록 내보내기
+ * 테마 토글 (라이트 ↔ 다크)
  */
-async function exportHistory(format = 'json') {
-    try {
-        // JSON 또는 TXT 다운로드
-        window.location.href = `/api/export-history?format=${format}`;
-    } catch (error) {
-        console.error('대화 내보내기 오류:', error);
-        alert('대화 내보내기 중 오류가 발생했습니다.');
+function toggleTheme() {
+    const body = document.body;
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeToggleLogin = document.getElementById('theme-toggle-login');
+    const currentTheme = body.getAttribute('data-theme') || 'light';
+
+    if (currentTheme === 'light') {
+        body.setAttribute('data-theme', 'dark');
+        if (themeToggle) themeToggle.textContent = '☀️';
+        if (themeToggleLogin) themeToggleLogin.textContent = '☀️';
+        localStorage.setItem('theme', 'dark');
+    } else {
+        body.setAttribute('data-theme', 'light');
+        if (themeToggle) themeToggle.textContent = '🌙';
+        if (themeToggleLogin) themeToggleLogin.textContent = '🌙';
+        localStorage.setItem('theme', 'light');
     }
 }
+
+/**
+ * 페이지 로드 시 저장된 테마 적용
+ */
+function loadTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    const body = document.body;
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeToggleLogin = document.getElementById('theme-toggle-login');
+
+    body.setAttribute('data-theme', savedTheme);
+    if (savedTheme === 'dark') {
+        if (themeToggle) themeToggle.textContent = '☀️';
+        if (themeToggleLogin) themeToggleLogin.textContent = '☀️';
+    } else {
+        if (themeToggle) themeToggle.textContent = '🌙';
+        if (themeToggleLogin) themeToggleLogin.textContent = '🌙';
+    }
+}
+
+// 페이지 로드 시 테마 적용
+document.addEventListener('DOMContentLoaded', loadTheme);
+
+

@@ -1,14 +1,12 @@
 """
 Flask 기반 고객지원 챗봇 애플리케이션
 상담 이력을 기억하고 감정에 맞춰 응답하는 챗봇
-전문가 시스템 통합 (메세징 전문가 + 문서작성 전문가)
 """
 from flask import Flask, render_template, request, jsonify, session
 from config import Config
 from database import Database
 from sentiment_analyzer import SentimentAnalyzer
 from file_processor import FileProcessor
-from expert_system import ExpertSystem
 from external_apis import ExternalAPIManager
 from email_service import EmailService
 import os
@@ -65,16 +63,6 @@ else:
 api_manager = ExternalAPIManager()
 api_status = api_manager.check_availability()
 print(f"[외부 API] 날씨 API: {api_status['weather']}, 뉴스 API: {api_status['news']}")
-
-# 전문가 시스템 초기화 (API 관리자 전달)
-expert_system = ExpertSystem(
-    sentiment_analyzer,
-    USE_GPT,
-    openai_client,
-    weather_api=api_manager.weather_api,
-    news_api=api_manager.news_api
-)
-print(f"[전문가 시스템] 초기화 완료 - GPT 사용: {USE_GPT}")
 
 
 # ==================== 라우트 ====================
@@ -141,8 +129,10 @@ def register_user():
                 # 텍스트 미리보기 추가 (Word, TXT, PDF)
                 if 'text_preview' in parsed_info:
                     file_info_dict['text_preview'] = parsed_info['text_preview']
+                    print(f"[파일 이력] 텍스트 미리보기 로드: {filename}, 길이: {len(parsed_info['text_preview'])}")
 
                 msg['attached_files'].append(file_info_dict)
+                print(f"[파일 이력] 파일 추가: {filename}, is_image={file_info_dict.get('is_image')}, url={file_info_dict.get('url')[:50] if file_info_dict.get('url') else 'None'}...")
 
     stats = db.get_user_stats(user_id)
 
@@ -159,6 +149,42 @@ def register_user():
         'stats': stats,
         'welcome_message': welcome_message
     })
+
+
+@app.route('/api/delete-account', methods=['POST'])
+def delete_account():
+    """회원탈퇴 API"""
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    # 입력 검증
+    if not username or not password:
+        return jsonify({'success': False, 'error': '아이디와 비밀번호를 입력해주세요.'}), 400
+
+    # 사용자 확인
+    user = db.get_user_by_username(username)
+    if not user:
+        user = db.get_user_by_email(username)
+
+    if not user:
+        return jsonify({'success': False, 'error': '존재하지 않는 계정입니다.'}), 404
+
+    # 비밀번호 확인
+    if not check_password_hash(user['password_hash'], password):
+        return jsonify({'success': False, 'error': '비밀번호가 일치하지 않습니다.'}), 401
+
+    # 계정 삭제
+    try:
+        user_id = user['id']
+        # 사용자의 모든 데이터 삭제
+        db.delete_all_messages(user_id)
+        db.delete_user(user_id)
+
+        return jsonify({'success': True, 'message': '계정이 성공적으로 삭제되었습니다.'})
+    except Exception as e:
+        print(f"계정 삭제 오류: {str(e)}")
+        return jsonify({'success': False, 'error': '계정 삭제 중 오류가 발생했습니다.'}), 500
 
 
 @app.route('/api/signup', methods=['POST'])
@@ -499,7 +525,7 @@ def chat():
                     if result.get('has_image'):
                         has_image = True
 
-                    # 파일 정보 저장 (table_data, text_preview 포함)
+                    # 파일 정보 저장 (table_data, text_preview, base64 포함)
                     file_info_dict = {
                         'filename': file.filename,
                         'url': file_url,
@@ -507,6 +533,12 @@ def chat():
                         'is_image': allowed_image_file(file.filename),
                         'extension': ext
                     }
+
+                    # 이미지 base64 데이터 추가 (미리보기용)
+                    if 'base64' in result['info']:
+                        file_info_dict['base64'] = result['info']['base64']
+                        file_info_dict['format'] = result['info'].get('format')
+                        file_info_dict['image_size'] = result['info'].get('size')
 
                     # 표 데이터가 있으면 추가 (Excel, CSV)
                     if 'table_data' in result:
@@ -542,20 +574,22 @@ def chat():
     # 사용자 메시지 저장
     message_id = db.save_message(user_id, user_message if user_message else "", is_user=True, sentiment=sentiment)
 
-    # 파일 정보 저장 (URL 포함)
-    for i, file_info in enumerate(file_infos):
-        # 해당 파일의 URL 찾기
-        file_url = None
-        if i < len(attached_files):
-            file_url = attached_files[i].get('url')
+    # 파일 정보 저장 (table_data, text_preview, URL 포함)
+    for attached_file in attached_files:
+        # file_info에서 type 정보 가져오기 (file_infos에서)
+        file_type = 'unknown'
+        for info in file_infos:
+            if info['filename'] == attached_file['filename']:
+                file_type = info['type']
+                break
 
         db.save_file_attachment(
             message_id,
-            file_info['filename'],
-            file_info['type'],
-            file_info.get('size', 0),
-            json.dumps(file_info),
-            file_url
+            attached_file['filename'],
+            file_type,
+            attached_file.get('size', 0),
+            json.dumps(attached_file),  # attached_file에는 table_data, text_preview 포함
+            attached_file.get('url')
         )
 
     # 1단계: 외부 API 명령 확인 (날씨, 뉴스)
@@ -584,23 +618,16 @@ def chat():
             'api_triggered': True  # API 응답임을 표시
         })
 
-    # 2단계: 전문가 시스템을 통한 응답 생성 (3인 협업)
-    # 이전 대화 컨텍스트 가져오기
-    context = db.get_user_history(user_id, limit=5)
-
-    # 3명의 전문가가 협업하여 응답 생성
-    expert_result = expert_system.process_message(full_message, sentiment, context)
-
-    bot_response = expert_result['response']
-    cta = expert_result.get('cta')
-    marketing_triggered = expert_result.get('marketing_triggered', False)
+    # 2단계: GPT를 통한 응답 생성
+    if USE_GPT and openai_client:
+        bot_response = generate_gpt_response(user_id, full_message, sentiment,
+                                            has_image=len(image_urls) > 0,
+                                            image_infos=[{'base64': img['base64']} for img in file_infos if img.get('base64')])
+    else:
+        bot_response = generate_rule_based_response(full_message, sentiment)
 
     # 봇 응답 저장
     db.save_message(user_id, bot_response, is_user=False, sentiment='neutral')
-
-    print(f"[전문가 시스템] 대화 버퍼: {expert_system.get_conversation_count()}개")
-    if marketing_triggered:
-        print(f"[마케팅 전문가] 긍정 신호 감지 - CTA 활성화")
 
     return jsonify({
         'response': bot_response,
@@ -608,9 +635,7 @@ def chat():
         'sentiment_info': sentiment_result,
         'files_processed': len(file_infos),
         'image_urls': image_urls,
-        'attached_files': attached_files,  # 모든 첨부 파일 정보
-        'marketing_triggered': marketing_triggered,  # 마케팅 전문가 활성화 여부
-        'cta': cta  # CTA 문구 (있다면)
+        'attached_files': attached_files
     })
 
 
@@ -725,13 +750,55 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
-    """사용자의 대화 이력 조회"""
+    """사용자의 대화 이력 조회 (첨부 파일 미리보기 포함)"""
     user_id = session.get('user_id')
 
     if not user_id:
         return jsonify({'error': '로그인이 필요합니다.'}), 401
 
     history = db.get_user_history(user_id)
+
+    # 첨부 파일 정보 처리 (URL 및 미리보기 데이터 추가)
+    for msg in history:
+        if 'attachments' in msg and msg['attachments']:
+            msg['attached_files'] = []
+            for att in msg['attachments']:
+                parsed_info = att.get('parsed_info', {})
+
+                # file_info는 저장된 전체 정보 (file_processor에서 반환한 것)
+                file_ext = parsed_info.get('extension', parsed_info.get('type', 'unknown'))
+                filename = att['filename']
+
+                # 파일 정보 구성
+                file_info_dict = {
+                    'filename': filename,
+                    'size': parsed_info.get('size', att.get('file_size', 0)),
+                    'extension': file_ext,
+                    'is_image': parsed_info.get('is_image', False)
+                }
+
+                # 저장된 URL 사용
+                if parsed_info.get('url'):
+                    file_info_dict['url'] = parsed_info['url']
+                elif att.get('file_url'):
+                    file_info_dict['url'] = att['file_url']
+
+                # 이미지 base64 데이터 추가
+                if 'base64' in parsed_info:
+                    file_info_dict['base64'] = parsed_info['base64']
+                    file_info_dict['format'] = parsed_info.get('format')
+                    file_info_dict['image_size'] = parsed_info.get('size')
+
+                # 표 데이터가 있으면 추가 (Excel, CSV)
+                if 'table_data' in parsed_info:
+                    file_info_dict['table_data'] = parsed_info['table_data']
+
+                # 텍스트 미리보기 추가 (Word, TXT, PDF)
+                if 'text_preview' in parsed_info:
+                    file_info_dict['text_preview'] = parsed_info['text_preview']
+
+                msg['attached_files'].append(file_info_dict)
+
     stats = db.get_user_stats(user_id)
 
     return jsonify({
@@ -764,21 +831,6 @@ def summarize_conversation():
         }), 400
 
 
-@app.route('/api/expert-status', methods=['GET'])
-def get_expert_status():
-    """전문가 시스템 상태 조회"""
-    user_id = session.get('user_id')
-
-    if not user_id:
-        return jsonify({'error': '로그인이 필요합니다.'}), 401
-
-    return jsonify({
-        'conversation_count': expert_system.get_conversation_count(),
-        'auto_summarize_interval': expert_system.auto_summarize_interval,
-        'gpt_enabled': USE_GPT
-    })
-
-
 @app.route('/api/delete-history', methods=['POST'])
 def delete_history():
     """대화 기록 삭제 API"""
@@ -799,56 +851,6 @@ def delete_history():
         return jsonify({'error': '대화 삭제 중 오류가 발생했습니다.'}), 500
 
 
-@app.route('/api/export-history', methods=['GET'])
-def export_history():
-    """대화 기록 내보내기 API"""
-    user_id = session.get('user_id')
-
-    if not user_id:
-        return jsonify({'error': '로그인이 필요합니다.'}), 401
-
-    format_type = request.args.get('format', 'json')  # json 또는 txt
-
-    try:
-        history = db.get_user_history(user_id, limit=10000)  # 전체 이력
-
-        if format_type == 'txt':
-            # 텍스트 형식으로 변환
-            output = f"대화 기록 - {session.get('username')}\n"
-            output += "=" * 50 + "\n\n"
-
-            for msg in history:
-                timestamp = msg.get('timestamp', '')
-                role = '사용자' if msg.get('is_user') else '챗봇'
-                message = msg.get('message', '')
-                sentiment = msg.get('sentiment', '')
-
-                output += f"[{timestamp}] {role}"
-                if sentiment and msg.get('is_user'):
-                    output += f" (감정: {sentiment})"
-                output += f"\n{message}\n\n"
-
-            return output, 200, {
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Content-Disposition': f'attachment; filename="chat_history_{session.get("username")}.txt"'
-            }
-        else:
-            # JSON 형식으로 반환
-            export_data = {
-                'username': session.get('username'),
-                'export_date': datetime.now().isoformat(),
-                'total_messages': len(history),
-                'history': history
-            }
-
-            return jsonify(export_data), 200, {
-                'Content-Disposition': f'attachment; filename="chat_history_{session.get("username")}.json"'
-            }
-    except Exception as e:
-        print(f"[대화 내보내기 오류] {str(e)}")
-        return jsonify({'error': '대화 내보내기 중 오류가 발생했습니다.'}), 500
-
-
 if __name__ == '__main__':
     # 로컬 개발 환경에서만 실행
     if not IS_VERCEL:
@@ -864,3 +866,176 @@ if __name__ == '__main__':
         app.run(debug=True, host='0.0.0.0', port=5000)
     else:
         print("Vercel 서버리스 환경 - WSGI 모드로 실행됩니다.")
+
+
+# ==================== 사용자 설정 API ====================
+
+@app.route('/api/preferences', methods=['GET'])
+def get_preferences():
+    """사용자 설정 조회"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        prefs = db.get_user_preferences(user_id)
+        if not prefs:
+            return jsonify({'error': '설정을 찾을 수 없습니다.'}), 404
+        return jsonify(prefs)
+    except Exception as e:
+        print(f"설정 조회 오류: {str(e)}")
+        return jsonify({'error': f'설정 조회 중 오류: {str(e)}'}), 500
+
+
+@app.route('/api/preferences', methods=['POST'])
+def update_preferences():
+    """사용자 설정 업데이트"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    data = request.json
+    db.update_user_preferences(user_id, data)
+
+    return jsonify({
+        'success': True,
+        'message': '설정이 저장되었습니다.'
+    })
+
+
+# New endpoint names (frontend uses these)
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """사용자 설정 조회 (새 엔드포인트)"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        prefs = db.get_user_preferences(user_id)
+        if not prefs:
+            return jsonify({'error': '설정을 찾을 수 없습니다.'}), 404
+        return jsonify(prefs)
+    except Exception as e:
+        print(f"설정 조회 오류: {str(e)}")
+        return jsonify({'error': f'설정 조회 중 오류: {str(e)}'}), 500
+
+
+@app.route('/api/settings', methods=['POST'])
+def update_settings():
+    """사용자 설정 업데이트 (새 엔드포인트)"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        data = request.json
+        db.update_user_preferences(user_id, data)
+
+        return jsonify({
+            'success': True,
+            'message': '설정이 저장되었습니다.'
+        })
+    except Exception as e:
+        print(f"설정 저장 오류: {str(e)}")
+        return jsonify({'error': f'설정 저장 중 오류: {str(e)}'}), 500
+
+
+# ==================== 대화 기록 검색 API ====================
+
+@app.route('/api/search-messages', methods=['GET'])
+def search_messages():
+    """대화 기록 검색"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        keyword = request.args.get('keyword')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        sentiment = request.args.get('sentiment')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        result = db.search_messages(
+            user_id,
+            keyword=keyword,
+            start_date=start_date,
+            end_date=end_date,
+            sentiment=sentiment,
+            limit=limit,
+            offset=offset
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        print(f"검색 오류: {str(e)}")
+        return jsonify({'error': f'검색 중 오류: {str(e)}'}), 500
+
+
+# New endpoint name (frontend uses this)
+@app.route('/api/search', methods=['GET'])
+def search():
+    """대화 기록 검색 (새 엔드포인트)"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        keyword = request.args.get('keyword')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        sentiment = request.args.get('sentiment')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        result = db.search_messages(
+            user_id,
+            keyword=keyword,
+            start_date=start_date,
+            end_date=end_date,
+            sentiment=sentiment,
+            limit=limit,
+            offset=offset
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        print(f"검색 오류: {str(e)}")
+        return jsonify({'error': f'검색 중 오류: {str(e)}'}), 500
+
+
+@app.route('/api/messages/by-date', methods=['GET'])
+def get_messages_by_date():
+    """날짜별 메시지 조회"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+    
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        return jsonify({'error': '시작일과 종료일이 필요합니다.'}), 400
+    
+    result = db.get_messages_by_date_range(user_id, start_date, end_date)
+    return jsonify(result)
+
+
+@app.route('/api/messages/by-sentiment', methods=['GET'])
+def get_messages_by_sentiment():
+    """감정별 메시지 조회"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': '로그인이 필요합니다.'}), 401
+    
+    sentiment = request.args.get('sentiment')
+    limit = int(request.args.get('limit', 50))
+    
+    if not sentiment:
+        return jsonify({'error': '감정 타입이 필요합니다.'}), 400
+    
+    result = db.get_messages_by_sentiment(user_id, sentiment, limit)
+    return jsonify(result)
+

@@ -96,6 +96,21 @@
       "faq_candidate": null,
       "action_items": [],
       "generated_at": "2025-11-24T14:11:35.182009"
+    },
+    {
+      "main_topic": "고객 문의 대화",
+      "keywords": [
+        "고객지원",
+        "문의"
+      ],
+      "conversation_count": 10,
+      "sentiment_summary": "주요 감정: neutral (10회)",
+      "sentiment_distribution": {
+        "neutral": 10
+      },
+      "faq_candidate": null,
+      "action_items": [],
+      "generated_at": "2025-11-27T09:55:18.151659"
     }
   ]
 }
