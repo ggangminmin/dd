@@ -1564,3 +1564,248 @@ body[data-theme="dark"] .icon-btn:hover {
     background: rgba(102, 126, 234, 0.2);
 }
 
+
+
+/* 검색 모달 스타일 */
+.search-box {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.search-box input {
+    flex: 1;
+    padding: 12px 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.search-box input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.search-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.search-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.search-results {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.search-result-item {
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid #667eea;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.search-result-item:hover {
+    background: #e9ecef;
+    transform: translateX(5px);
+}
+
+.search-result-message {
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 5px;
+    line-height: 1.5;
+}
+
+.search-result-highlight {
+    background: #fff3cd;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+.search-result-meta {
+    display: flex;
+    gap: 15px;
+    font-size: 12px;
+    color: #6c757d;
+    margin-top: 8px;
+}
+
+.search-result-date {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.search-result-type {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.search-result-type.user {
+    background: #e7f3ff;
+    color: #0066cc;
+}
+
+.search-result-type.bot {
+    background: #f0e7ff;
+    color: #6600cc;
+}
+
+.search-no-results {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6c757d;
+}
+
+.search-loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: #667eea;
+}
+
+/* 다크모드 - 검색 스타일 */
+body[data-theme="dark"] .search-box input {
+    background: rgba(45, 45, 74, 0.5);
+    border-color: rgba(102, 126, 234, 0.3);
+    color: #e0e7ff;
+}
+
+body[data-theme="dark"] .search-box input::placeholder {
+    color: #a5b4fc;
+}
+
+body[data-theme="dark"] .search-result-item {
+    background: rgba(45, 45, 74, 0.5);
+    border-left-color: #667eea;
+}
+
+body[data-theme="dark"] .search-result-item:hover {
+    background: rgba(102, 126, 234, 0.2);
+}
+
+body[data-theme="dark"] .search-result-message {
+    color: #e0e7ff;
+}
+
+body[data-theme="dark"] .search-result-highlight {
+    background: rgba(251, 191, 36, 0.3);
+    color: #fbbf24;
+}
+
+body[data-theme="dark"] .search-result-meta {
+    color: #a5b4fc;
+}
+
+body[data-theme="dark"] .search-result-type.user {
+    background: rgba(0, 102, 204, 0.3);
+    color: #60a5fa;
+}
+
+body[data-theme="dark"] .search-result-type.bot {
+    background: rgba(102, 0, 204, 0.3);
+    color: #c084fc;
+}
+
+body[data-theme="dark"] .search-no-results,
+body[data-theme="dark"] .search-loading {
+    color: #a5b4fc;
+}
+
+
+
+/* 검색 결과 메시지 하이라이트 효과 */
+.highlight-message {
+    animation: highlightPulse 2s ease-in-out;
+}
+
+@keyframes highlightPulse {
+    0% {
+        background-color: rgba(102, 126, 234, 0.3);
+        transform: scale(1.02);
+    }
+    50% {
+        background-color: rgba(102, 126, 234, 0.5);
+        transform: scale(1.02);
+    }
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+    }
+}
+
+
+
+/* 이미지 뷰어 모달 */
+.image-viewer-modal {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    padding-top: 50px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.95);
+}
+
+.image-viewer-content {
+    margin: auto;
+    display: block;
+    max-width: 90%;
+    max-height: 90vh;
+    object-fit: contain;
+    animation: zoomIn 0.3s ease;
+}
+
+@keyframes zoomIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.image-viewer-close {
+    position: absolute;
+    top: 20px;
+    right: 40px;
+    color: #fff;
+    font-size: 50px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 10001;
+}
+
+.image-viewer-close:hover,
+.image-viewer-close:focus {
+    color: #667eea;
+    transform: scale(1.2);
+}
+
+/* 이미지를 클릭 가능하게 만들기 */
+.message-image {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.message-image:hover {
+    opacity: 0.8;
+    transform: scale(1.02);
+}
+

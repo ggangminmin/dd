@@ -451,12 +451,12 @@ function loadHistoryFromLoginResponse(history) {
         if (msg.is_user) {
             // 사용자 메시지: 첨부 파일이 있으면 전용 함수 사용
             if (msg.attached_files && msg.attached_files.length > 0) {
-                addUserMessageWithHistory(msg.message || "", msg.attached_files, msg.id, false);
+                addUserMessageWithHistory(msg.message || "", msg.attached_files, msg.id, false, msg.timestamp);
             } else {
-                addUserMessage(msg.message || "", [], msg.id, false);
+                addUserMessage(msg.message || "", [], msg.id, false, msg.timestamp);
             }
         } else {
-            addBotMessage(msg.message, false);
+            addBotMessage(msg.message, false, msg.timestamp);
         }
     });
 
@@ -758,13 +758,17 @@ async function sendMessage() {
 /**
  * 사용자 메시지 추가
  */
-function addUserMessage(message, imageUrls = [], messageId = null, scroll = true) {
+function addUserMessage(message, imageUrls = [], messageId = null, scroll = true, timestamp = null) {
     const messagesDiv = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user';
 
     if (messageId) {
         messageDiv.setAttribute('data-message-id', messageId);
+    }
+
+    if (timestamp) {
+        messageDiv.setAttribute('data-timestamp', timestamp);
     }
 
     let imagesHtml = '';
@@ -792,13 +796,17 @@ function addUserMessage(message, imageUrls = [], messageId = null, scroll = true
 /**
  * 사용자 메시지 추가 (이전 대화 이력용 - 첨부 파일 포함)
  */
-function addUserMessageWithHistory(message, attachedFiles, messageId, scroll = true) {
+function addUserMessageWithHistory(message, attachedFiles, messageId, scroll = true, timestamp = null) {
     const messagesDiv = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user';
 
     if (messageId) {
         messageDiv.setAttribute('data-message-id', messageId);
+    }
+
+    if (timestamp) {
+        messageDiv.setAttribute('data-timestamp', timestamp);
     }
 
     let contentHtml = '';
@@ -929,10 +937,14 @@ function updateUserMessageWithFiles(messageId, attachedFiles) {
 /**
  * 봇 메시지 추가
  */
-function addBotMessage(message, scroll = true) {
+function addBotMessage(message, scroll = true, timestamp = null) {
     const messagesDiv = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message bot';
+
+    if (timestamp) {
+        messageDiv.setAttribute('data-timestamp', timestamp);
+    }
 
     // HTML 포함 여부 확인 (뉴스, 표 등)
     const containsHtml = message.includes('<') && message.includes('>');
@@ -1293,5 +1305,177 @@ function loadTheme() {
 
 // 페이지 로드 시 테마 적용
 document.addEventListener('DOMContentLoaded', loadTheme);
+
+// ==================== 검색 기능 ====================
+
+function showSearchModal() {
+    const modal = document.getElementById('search-modal');
+    modal.style.display = 'flex';
+    document.getElementById('search-input').focus();
+}
+
+function closeSearchModal() {
+    const modal = document.getElementById('search-modal');
+    modal.style.display = 'none';
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-results').innerHTML = '';
+}
+
+function handleSearchKeyPress(event) {
+    if (event.key === 'Enter') {
+        performSearch();
+    }
+}
+
+async function performSearch() {
+    const keyword = document.getElementById('search-input').value.trim();
+
+    if (!keyword) {
+        alert('검색어를 입력해주세요.');
+        return;
+    }
+
+    const resultsContainer = document.getElementById('search-results');
+    resultsContainer.innerHTML = '<div class="search-loading">🔍 검색 중...</div>';
+
+    try {
+        const response = await fetch('/api/search?keyword=' + encodeURIComponent(keyword));
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || '검색 중 오류가 발생했습니다.');
+        }
+
+        displaySearchResults(data.results, keyword, data.total);
+    } catch (error) {
+        console.error('검색 오류:', error);
+        resultsContainer.innerHTML = '<div class="search-no-results">❌ ' + error.message + '</div>';
+    }
+}
+
+function displaySearchResults(results, keyword, total) {
+    const resultsContainer = document.getElementById('search-results');
+
+    if (results.length === 0) {
+        resultsContainer.innerHTML = '<div class="search-no-results">🔍 "' + keyword + '"에 대한 검색 결과가 없습니다.</div>';
+        return;
+    }
+
+    let html = '<div style="margin-bottom: 15px; color: #667eea; font-weight: 600;">총 ' + total + '개의 결과를 찾았습니다.</div>';
+
+    results.forEach(result => {
+        const date = new Date(result.timestamp);
+        const formattedDate = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0') + ' ' + String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+
+        const highlightedMessage = highlightKeyword(result.message, keyword);
+        const messageType = result.is_user ? 'user' : 'bot';
+        const messageLabel = result.is_user ? '사용자' : '챗봇';
+
+        html += '<div class="search-result-item" onclick="scrollToMessage(\'' + result.timestamp + '\')">' +
+            '<div class="search-result-message">' + highlightedMessage + '</div>' +
+            '<div class="search-result-meta">' +
+            '<span class="search-result-type ' + messageType + '">' + messageLabel + '</span>' +
+            '<span class="search-result-date">📅 ' + formattedDate + '</span>' +
+            (result.sentiment ? '<span>😊 ' + result.sentiment + '</span>' : '') +
+            '</div></div>';
+    });
+
+    resultsContainer.innerHTML = html;
+}
+
+function scrollToMessage(timestamp) {
+    // 검색 모달 닫기
+    closeSearchModal();
+
+    // 채팅 메시지 영역의 모든 메시지를 가져오기
+    const chatMessages = document.getElementById('chat-messages');
+    const allMessages = chatMessages.querySelectorAll('.message');
+
+    // 타임스탬프로 메시지 찾기
+    let targetMessage = null;
+    allMessages.forEach(msg => {
+        const msgTimestamp = msg.getAttribute('data-timestamp');
+        if (msgTimestamp === timestamp) {
+            targetMessage = msg;
+        }
+    });
+
+    if (targetMessage) {
+        // 메시지로 스크롤
+        targetMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // 하이라이트 효과
+        targetMessage.classList.add('highlight-message');
+        setTimeout(() => {
+            targetMessage.classList.remove('highlight-message');
+        }, 2000);
+    }
+}
+
+// ==================== 이미지 뷰어 ====================
+
+function openImageViewer(imageSrc) {
+    const modal = document.getElementById('image-viewer-modal');
+    const modalImg = document.getElementById('image-viewer-img');
+
+    modal.style.display = 'flex';
+    modalImg.src = imageSrc;
+}
+
+function closeImageViewer() {
+    const modal = document.getElementById('image-viewer-modal');
+    modal.style.display = 'none';
+}
+
+// 이미지 뷰어 모달 외부 클릭 시 닫기
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('image-viewer-modal');
+    if (modal) {
+        modal.addEventListener('click', function(event) {
+            if (event.target === modal) {
+                closeImageViewer();
+            }
+        });
+    }
+
+    // 모든 이미지에 클릭 이벤트 추가 (동적으로 생성되는 이미지도 처리)
+    document.addEventListener('click', function(event) {
+        if (event.target.classList.contains('message-image')) {
+            openImageViewer(event.target.src);
+        }
+    });
+});
+
+function highlightKeyword(text, keyword) {
+    if (!keyword) return escapeHtml(text);
+    const escapedText = escapeHtml(text);
+    const escapedKeyword = escapeHtml(keyword);
+    const regex = new RegExp('(' + escapedKeyword + ')', 'gi');
+    return escapedText.replace(regex, '<span class="search-result-highlight">$1</span>');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 모달 외부 클릭 시 닫기 (기존 코드 확장)
+const originalWindowClick = window.onclick;
+window.onclick = function(event) {
+    const searchModal = document.getElementById('search-modal');
+    const historyModal = document.getElementById('history-modal');
+
+    if (event.target === searchModal) {
+        closeSearchModal();
+    }
+    if (event.target === historyModal) {
+        closeHistory();
+    }
+
+    if (originalWindowClick) {
+        originalWindowClick(event);
+    }
+}
 
 

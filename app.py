@@ -684,7 +684,9 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 
     # 시스템 프롬프트 (감정에 따라 조절)
     tone_info = sentiment_analyzer.get_response_tone(sentiment)
+    current_date = datetime.now().strftime('%Y년 %m월 %d일 %A')
     system_prompt = f"""당신은 친절한 고객지원 챗봇입니다.
+현재 날짜: {current_date}
 사용자의 현재 감정: {sentiment}
 응답 스타일: {tone_info['style']}
 
@@ -694,6 +696,7 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 3. 구체적이고 실용적인 해결책을 제시하세요.
 4. 이전 대화 내용을 참고하여 맥락을 유지하세요.
 5. 첨부된 파일이 있다면 그 내용을 분석하여 답변하세요.
+6. 날짜를 물어보면 위에 명시된 현재 날짜를 사용하세요.
 """
 
     # 대화 이력을 메시지 형식으로 변환
@@ -810,28 +813,33 @@ def get_history():
     })
 
 
-@app.route('/api/summarize', methods=['POST'])
-def summarize_conversation():
-    """대화 내용 수동 요약 (문서작성 전문가)"""
+@app.route('/api/search', methods=['GET'])
+def search_messages():
+    """대화 내용 검색 API"""
     user_id = session.get('user_id')
 
     if not user_id:
         return jsonify({'error': '로그인이 필요합니다.'}), 401
 
-    # 문서작성 전문가가 대화 요약
-    summary = expert_system.manual_summarize()
+    # 검색 파라미터
+    keyword = request.args.get('keyword', '').strip()
 
-    if summary:
+    if not keyword:
+        return jsonify({'error': '검색어를 입력해주세요.'}), 400
+
+    try:
+        # 데이터베이스에서 검색
+        result = db.search_messages(user_id, keyword=keyword, limit=100)
+
         return jsonify({
             'success': True,
-            'summary': summary,
-            'message': '대화 내용이 성공적으로 요약되었습니다.'
+            'keyword': keyword,
+            'results': result['messages'],
+            'total': result['total']
         })
-    else:
-        return jsonify({
-            'success': False,
-            'message': '요약할 대화 내용이 없습니다.'
-        }), 400
+    except Exception as e:
+        print(f"[검색 오류] {str(e)}")
+        return jsonify({'error': '검색 중 오류가 발생했습니다.'}), 500
 
 
 @app.route('/api/delete-history', methods=['POST'])

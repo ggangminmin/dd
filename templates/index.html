@@ -96,6 +96,9 @@
                         <button class="icon-btn" onclick="toggleTheme()" title="테마 변경" id="theme-toggle">
                             🌙
                         </button>
+                        <button class="icon-btn" onclick="showSearchModal()" title="대화 검색">
+                            🔍
+                        </button>
                         <button class="icon-btn" onclick="showHistory()" title="대화 통계">
                             📊
                         </button>
@@ -138,6 +141,25 @@
             </div>
         </div>
 
+        <!-- 검색 모달 -->
+        <div id="search-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>대화 내용 검색</h3>
+                    <button class="close-btn" onclick="closeSearchModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="search-box">
+                        <input type="text" id="search-input" placeholder="검색어를 입력하세요..." onkeypress="handleSearchKeyPress(event)">
+                        <button class="search-btn" onclick="performSearch()">🔍 검색</button>
+                    </div>
+                    <div id="search-results" class="search-results">
+                        <!-- 검색 결과가 여기에 표시됩니다 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 통계/이력 모달 -->
         <div id="history-modal" class="modal">
             <div class="modal-content">
@@ -151,6 +173,12 @@
             </div>
         </div>
 
+    </div>
+
+    <!-- 이미지 뷰어 모달 -->
+    <div id="image-viewer-modal" class="modal image-viewer-modal">
+        <span class="image-viewer-close" onclick="closeImageViewer()">&times;</span>
+        <img class="image-viewer-content" id="image-viewer-img">
     </div>
 
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
