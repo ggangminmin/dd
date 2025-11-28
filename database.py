@@ -120,23 +120,38 @@ class Database:
 
     def get_or_create_user(self, username):
         """사용자 조회 또는 생성 (기존 호환성 유지)"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from datetime import datetime
+            # MongoDB에서 사용자 조회 또는 생성
+            user = self.users.find_one({'username': username})
 
-        # 사용자 조회
-        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-        user = cursor.fetchone()
-
-        if user:
-            user_id = user['id']
+            if user:
+                return str(user['_id'])
+            else:
+                # 새 사용자 생성
+                result = self.users.insert_one({
+                    'username': username,
+                    'created_at': datetime.now()
+                })
+                return str(result.inserted_id)
         else:
-            # 사용자 생성
-            cursor.execute('INSERT INTO users (username) VALUES (?)', (username,))
-            conn.commit()
-            user_id = cursor.lastrowid
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        conn.close()
-        return user_id
+            # 사용자 조회
+            cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+            user = cursor.fetchone()
+
+            if user:
+                user_id = user['id']
+            else:
+                # 사용자 생성
+                cursor.execute('INSERT INTO users (username) VALUES (?)', (username,))
+                conn.commit()
+                user_id = cursor.lastrowid
+
+            conn.close()
+            return user_id
 
     def create_user(self, username, email, password_hash):
         """신규 사용자 생성 (회원가입)"""
@@ -199,97 +214,194 @@ class Database:
 
     def update_last_login(self, user_id):
         """마지막 로그인 시간 업데이트"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
+            from datetime import datetime
+            self.users.update_one(
+                {'_id': ObjectId(user_id) if isinstance(user_id, str) else user_id},
+                {'$set': {'last_login': datetime.now()}}
+            )
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            UPDATE users SET last_login = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (user_id,))
-        conn.commit()
-        conn.close()
+            cursor.execute('''
+                UPDATE users SET last_login = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (user_id,))
+            conn.commit()
+            conn.close()
 
     def save_message(self, user_id, message, is_user, sentiment=None):
         """메시지 저장"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
+            from datetime import datetime
 
-        cursor.execute('''
-            INSERT INTO chat_history (user_id, message, is_user, sentiment)
-            VALUES (?, ?, ?, ?)
-        ''', (user_id, message, is_user, sentiment))
+            # user_id가 문자열이면 ObjectId로 변환
+            if isinstance(user_id, str):
+                user_id = ObjectId(user_id)
 
-        message_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+            result = self.chat_history.insert_one({
+                'user_id': user_id,
+                'message': message,
+                'is_user': is_user,
+                'sentiment': sentiment,
+                'timestamp': datetime.now()
+            })
+            return str(result.inserted_id)
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        return message_id
+            cursor.execute('''
+                INSERT INTO chat_history (user_id, message, is_user, sentiment)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, message, is_user, sentiment))
+
+            message_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+
+            return message_id
 
     def save_file_attachment(self, message_id, filename, file_type, file_size, file_info, file_url=None):
         """파일 첨부 정보 저장"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
+            from datetime import datetime
 
-        cursor.execute('''
-            INSERT INTO file_attachments (message_id, filename, file_type, file_size, file_info, file_url)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (message_id, filename, file_type, file_size, file_info, file_url))
+            # message_id가 문자열이면 ObjectId로 변환
+            if isinstance(message_id, str):
+                message_id = ObjectId(message_id)
 
-        conn.commit()
-        conn.close()
+            self.file_attachments.insert_one({
+                'message_id': message_id,
+                'filename': filename,
+                'file_type': file_type,
+                'file_size': file_size,
+                'file_info': file_info,
+                'file_url': file_url,
+                'timestamp': datetime.now()
+            })
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO file_attachments (message_id, filename, file_type, file_size, file_info, file_url)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (message_id, filename, file_type, file_size, file_info, file_url))
+
+            conn.commit()
+            conn.close()
 
     def get_user_history(self, user_id, limit=None):
         """사용자의 대화 이력 조회 (첨부 파일 정보 포함)"""
         if limit is None:
             limit = Config.MAX_HISTORY_LENGTH
 
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
+            import json
 
-        cursor.execute('''
-            SELECT id, message, is_user, sentiment, timestamp
-            FROM chat_history
-            WHERE user_id = ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-        ''', (user_id, limit))
+            # user_id가 문자열이면 ObjectId로 변환
+            if isinstance(user_id, str):
+                user_id_obj = ObjectId(user_id)
+            else:
+                user_id_obj = user_id
 
-        history = cursor.fetchall()
+            # MongoDB에서 대화 이력 조회
+            messages = list(self.chat_history.find(
+                {'user_id': user_id_obj}
+            ).sort('timestamp', -1).limit(limit))
 
-        # 각 메시지에 첨부 파일 정보 추가
-        result = []
-        for row in history:
-            message_dict = dict(row)
-            message_id = message_dict['id']
+            result = []
+            for msg in messages:
+                message_dict = {
+                    'id': str(msg['_id']),
+                    'message': msg.get('message'),
+                    'is_user': msg.get('is_user'),
+                    'sentiment': msg.get('sentiment'),
+                    'timestamp': msg.get('timestamp').isoformat() if msg.get('timestamp') else None
+                }
 
-            # 첨부 파일 조회
+                # 첨부 파일 조회
+                attachments = list(self.file_attachments.find({'message_id': msg['_id']}))
+                if attachments:
+                    message_dict['attachments'] = []
+                    for att in attachments:
+                        att_dict = {
+                            'filename': att.get('filename'),
+                            'file_type': att.get('file_type'),
+                            'file_size': att.get('file_size'),
+                            'file_info': att.get('file_info'),
+                            'file_url': att.get('file_url')
+                        }
+                        # file_info JSON 파싱
+                        if att_dict.get('file_info'):
+                            try:
+                                if isinstance(att_dict['file_info'], str):
+                                    file_info = json.loads(att_dict['file_info'])
+                                else:
+                                    file_info = att_dict['file_info']
+                                att_dict['parsed_info'] = file_info
+                            except:
+                                pass
+                        message_dict['attachments'].append(att_dict)
+
+                result.append(message_dict)
+
+            # 최신 순서를 오래된 순서로 변경
+            return list(reversed(result))
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
             cursor.execute('''
-                SELECT filename, file_type, file_size, file_info, file_url
-                FROM file_attachments
-                WHERE message_id = ?
-            ''', (message_id,))
+                SELECT id, message, is_user, sentiment, timestamp
+                FROM chat_history
+                WHERE user_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            ''', (user_id, limit))
 
-            attachments = cursor.fetchall()
-            if attachments:
-                import json
-                message_dict['attachments'] = []
-                for att in attachments:
-                    att_dict = dict(att)
-                    # file_info JSON 파싱
-                    if att_dict.get('file_info'):
-                        try:
-                            file_info = json.loads(att_dict['file_info'])
-                            att_dict['parsed_info'] = file_info
-                        except:
-                            pass
-                    message_dict['attachments'].append(att_dict)
+            history = cursor.fetchall()
 
-            result.append(message_dict)
+            # 각 메시지에 첨부 파일 정보 추가
+            result = []
+            for row in history:
+                message_dict = dict(row)
+                message_id = message_dict['id']
 
-        conn.close()
+                # 첨부 파일 조회
+                cursor.execute('''
+                    SELECT filename, file_type, file_size, file_info, file_url
+                    FROM file_attachments
+                    WHERE message_id = ?
+                ''', (message_id,))
 
-        # 최신 순서를 오래된 순서로 변경
-        return list(reversed(result))
+                attachments = cursor.fetchall()
+                if attachments:
+                    import json
+                    message_dict['attachments'] = []
+                    for att in attachments:
+                        att_dict = dict(att)
+                        # file_info JSON 파싱
+                        if att_dict.get('file_info'):
+                            try:
+                                file_info = json.loads(att_dict['file_info'])
+                                att_dict['parsed_info'] = file_info
+                            except:
+                                pass
+                        message_dict['attachments'].append(att_dict)
+
+                result.append(message_dict)
+
+            conn.close()
+
+            # 최신 순서를 오래된 순서로 변경
+            return list(reversed(result))
 
     def get_user_stats(self, user_id):
         """사용자 통계 정보"""
