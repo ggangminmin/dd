@@ -718,6 +718,20 @@ body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
     background: rgba(102, 126, 234, 0.6);
 }
 
+/* 다크모드 통계 스타일 */
+body[data-theme="dark"] .stats-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"] .stats-item label {
+    color: #9ba3eb;
+}
+
+body[data-theme="dark"] .stats-item div {
+    color: #e0e0e0;
+}
+
 /* 파일 첨부 관련 스타일 */
 .attach-btn {
     background: none;
