@@ -953,68 +953,7 @@ def update_settings():
 
 
 # ==================== 대화 기록 검색 API ====================
-
-@app.route('/api/search-messages', methods=['GET'])
-def search_messages():
-    """대화 기록 검색"""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': '로그인이 필요합니다.'}), 401
-
-    try:
-        keyword = request.args.get('keyword')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        sentiment = request.args.get('sentiment')
-        limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
-
-        result = db.search_messages(
-            user_id,
-            keyword=keyword,
-            start_date=start_date,
-            end_date=end_date,
-            sentiment=sentiment,
-            limit=limit,
-            offset=offset
-        )
-
-        return jsonify(result)
-    except Exception as e:
-        print(f"검색 오류: {str(e)}")
-        return jsonify({'error': f'검색 중 오류: {str(e)}'}), 500
-
-
-# New endpoint name (frontend uses this)
-@app.route('/api/search', methods=['GET'])
-def search():
-    """대화 기록 검색 (새 엔드포인트)"""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': '로그인이 필요합니다.'}), 401
-
-    try:
-        keyword = request.args.get('keyword')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        sentiment = request.args.get('sentiment')
-        limit = int(request.args.get('limit', 50))
-        offset = int(request.args.get('offset', 0))
-
-        result = db.search_messages(
-            user_id,
-            keyword=keyword,
-            start_date=start_date,
-            end_date=end_date,
-            sentiment=sentiment,
-            limit=limit,
-            offset=offset
-        )
-
-        return jsonify(result)
-    except Exception as e:
-        print(f"검색 오류: {str(e)}")
-        return jsonify({'error': f'검색 중 오류: {str(e)}'}), 500
+# 간단한 검색은 위의 /api/search 사용
 
 
 @app.route('/api/messages/by-date', methods=['GET'])

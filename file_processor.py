@@ -16,7 +16,14 @@ except ImportError:
         PdfReader = None  # PDF 처리 불가능
 from docx import Document
 import openpyxl
-import pandas as pd
+
+# Pandas는 선택적 임포트 (Vercel 서버리스 크기 제한 대응)
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None
+    PANDAS_AVAILABLE = False
 
 
 class FileProcessor:
@@ -169,6 +176,13 @@ class FileProcessor:
     def process_xlsx(file_data, filename):
         """XLSX 파일 처리"""
         try:
+            # Pandas 없으면 기본 처리
+            if not PANDAS_AVAILABLE:
+                return {
+                    'success': False,
+                    'error': 'XLSX 처리를 위한 pandas 패키지가 설치되지 않았습니다.'
+                }
+
             print(f"[FileProcessor] XLSX 처리 시작: {filename}, 크기: {len(file_data)} bytes")
             xlsx_file = io.BytesIO(file_data)
 
@@ -217,6 +231,13 @@ class FileProcessor:
     def process_csv(file_data, filename):
         """CSV 파일 처리"""
         try:
+            # Pandas 없으면 기본 처리
+            if not PANDAS_AVAILABLE:
+                return {
+                    'success': False,
+                    'error': 'CSV 처리를 위한 pandas 패키지가 설치되지 않았습니다.'
+                }
+
             csv_file = io.BytesIO(file_data)
             df = pd.read_csv(csv_file)
 

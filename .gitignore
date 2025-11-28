@@ -29,3 +29,14 @@ static/uploads/*
 .idea/
 *.swp
 *.swo
+
+# Node modules (Electron)
+node_modules/
+electron/
+
+# Windows reserved files
+nul
+
+# Temporary files
+*.html
+!templates/*.html
