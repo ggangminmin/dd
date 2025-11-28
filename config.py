@@ -29,6 +29,10 @@ class Config:
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
     USE_GPT_API = os.getenv('USE_GPT_API', 'False').lower() == 'true'
 
+    # MongoDB 설정 (Vercel 배포용)
+    MONGODB_URI = os.getenv('MONGODB_URI', '')
+    USE_MONGODB = os.getenv('USE_MONGODB', 'False').lower() == 'true'
+
     # 챗봇 설정
     CHATBOT_NAME = "고객지원 봇"
     MAX_HISTORY_LENGTH = 10  # 불러올 최대 이전 대화 개수

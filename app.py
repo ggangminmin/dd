@@ -865,12 +865,13 @@ def delete_history():
 if __name__ == '__main__':
     # 로컬 개발 환경에서만 실행
     if not IS_VERCEL:
+        db_info = "MongoDB (영구 저장)" if Config.USE_MONGODB else f"SQLite ({Config.DATABASE_PATH})"
         print(f"""
         ========================================
         고객지원 챗봇 서버 시작
         ========================================
         - GPT API 사용: {USE_GPT}
-        - 데이터베이스: {Config.DATABASE_PATH}
+        - 데이터베이스: {db_info}
         - 서버 주소: http://localhost:5000
         ========================================
         """)

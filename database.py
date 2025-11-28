@@ -1,14 +1,37 @@
 """
-데이터베이스 관리 모듈 - SQLite를 사용한 대화 이력 저장
+데이터베이스 관리 모듈 - SQLite/MongoDB를 사용한 대화 이력 저장
 """
 import sqlite3
 from datetime import datetime
 from config import Config
 
+# MongoDB 선택적 임포트
+try:
+    from pymongo import MongoClient
+    from bson.objectid import ObjectId
+    MONGODB_AVAILABLE = True
+except ImportError:
+    MongoClient = None
+    ObjectId = None
+    MONGODB_AVAILABLE = False
+
 class Database:
     def __init__(self):
-        self.db_path = Config.DATABASE_PATH
-        self.init_db()
+        self.use_mongodb = Config.USE_MONGODB and MONGODB_AVAILABLE
+
+        if self.use_mongodb:
+            # MongoDB 연결
+            self.client = MongoClient(Config.MONGODB_URI)
+            self.db = self.client.get_default_database()
+            self.users = self.db.users
+            self.chat_history = self.db.chat_history
+            self.file_attachments = self.db.file_attachments
+            self.user_preferences = self.db.user_preferences
+            self.init_mongodb()
+        else:
+            # SQLite 연결
+            self.db_path = Config.DATABASE_PATH
+            self.init_db()
 
     def get_connection(self):
         """데이터베이스 연결 생성"""
@@ -82,6 +105,19 @@ class Database:
         conn.commit()
         conn.close()
 
+    def init_mongodb(self):
+        """MongoDB 인덱스 초기화"""
+        # 사용자 테이블 인덱스
+        self.users.create_index('username', unique=True)
+        self.users.create_index('email', unique=True, sparse=True)
+
+        # 대화 이력 인덱스
+        self.chat_history.create_index('user_id')
+        self.chat_history.create_index('timestamp')
+
+        # 파일 첨부 인덱스
+        self.file_attachments.create_index('message_id')
+
     def get_or_create_user(self, username):
         """사용자 조회 또는 생성 (기존 호환성 유지)"""
         conn = self.get_connection()
@@ -136,17 +172,30 @@ class Database:
 
     def get_user_by_email(self, email):
         """email로 사용자 정보 조회"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            user = self.users.find_one({'email': email})
+            if user:
+                return {
+                    'id': str(user['_id']),
+                    'username': user.get('username'),
+                    'email': user.get('email'),
+                    'password_hash': user.get('password_hash'),
+                    'created_at': user.get('created_at'),
+                    'last_login': user.get('last_login')
+                }
+            return None
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT id, username, email, password_hash, created_at, last_login
-            FROM users WHERE email = ?
-        ''', (email,))
-        user = cursor.fetchone()
-        conn.close()
+            cursor.execute('''
+                SELECT id, username, email, password_hash, created_at, last_login
+                FROM users WHERE email = ?
+            ''', (email,))
+            user = cursor.fetchone()
+            conn.close()
 
-        return dict(user) if user else None
+            return dict(user) if user else None
 
     def update_last_login(self, user_id):
         """마지막 로그인 시간 업데이트"""
@@ -262,62 +311,104 @@ class Database:
 
     def save_reset_token(self, email, token, expiry):
         """비밀번호 재설정 토큰 저장"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            result = self.users.update_one(
+                {'email': email},
+                {'$set': {
+                    'reset_token': token,
+                    'reset_token_expiry': expiry
+                }}
+            )
+            return result.modified_count > 0
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            UPDATE users
-            SET reset_token = ?, reset_token_expiry = ?
-            WHERE email = ?
-        ''', (token, expiry, email))
+            cursor.execute('''
+                UPDATE users
+                SET reset_token = ?, reset_token_expiry = ?
+                WHERE email = ?
+            ''', (token, expiry, email))
 
-        conn.commit()
-        affected = cursor.rowcount
-        conn.close()
-        return affected > 0
+            conn.commit()
+            affected = cursor.rowcount
+            conn.close()
+            return affected > 0
 
     def verify_reset_token(self, token):
         """토큰 검증 및 사용자 정보 반환"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            user = self.users.find_one({'reset_token': token})
 
-        cursor.execute('''
-            SELECT id, username, email, reset_token_expiry
-            FROM users
-            WHERE reset_token = ?
-        ''', (token,))
+            if not user:
+                return None
 
-        user = cursor.fetchone()
-        conn.close()
+            # 토큰 만료 확인
+            expiry = user.get('reset_token_expiry')
+            if datetime.now() > expiry:
+                return None
 
-        if not user:
-            return None
+            return {
+                'id': str(user['_id']),
+                'username': user.get('username'),
+                'email': user.get('email'),
+                'reset_token_expiry': expiry
+            }
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        user_dict = dict(user)
+            cursor.execute('''
+                SELECT id, username, email, reset_token_expiry
+                FROM users
+                WHERE reset_token = ?
+            ''', (token,))
 
-        # 토큰 만료 확인
-        from datetime import datetime
-        expiry = datetime.fromisoformat(user_dict['reset_token_expiry'])
-        if datetime.now() > expiry:
-            return None
+            user = cursor.fetchone()
+            conn.close()
 
-        return user_dict
+            if not user:
+                return None
+
+            user_dict = dict(user)
+
+            # 토큰 만료 확인
+            from datetime import datetime
+            expiry = datetime.fromisoformat(user_dict['reset_token_expiry'])
+            if datetime.now() > expiry:
+                return None
+
+            return user_dict
 
     def update_password(self, user_id, new_password_hash):
         """비밀번호 업데이트 및 토큰 삭제"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
+            result = self.users.update_one(
+                {'_id': ObjectId(user_id) if isinstance(user_id, str) else user_id},
+                {'$set': {
+                    'password_hash': new_password_hash
+                },
+                '$unset': {
+                    'reset_token': '',
+                    'reset_token_expiry': ''
+                }}
+            )
+            return result.modified_count > 0
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            UPDATE users
-            SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL
-            WHERE id = ?
-        ''', (new_password_hash, user_id))
+            cursor.execute('''
+                UPDATE users
+                SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL
+                WHERE id = ?
+            ''', (new_password_hash, user_id))
 
-        conn.commit()
-        affected = cursor.rowcount
-        conn.close()
-        return affected > 0
+            conn.commit()
+            affected = cursor.rowcount
+            conn.close()
+            return affected > 0
 
     def delete_all_messages(self, user_id):
         """사용자의 모든 대화 기록 삭제"""
