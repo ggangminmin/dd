@@ -479,6 +479,11 @@ class Database:
     def save_reset_token(self, email, token, expiry):
         """비밀번호 재설정 토큰 저장"""
         if self.use_mongodb:
+            from datetime import datetime
+            # expiry가 문자열이면 datetime으로 변환
+            if isinstance(expiry, str):
+                expiry = datetime.fromisoformat(expiry)
+
             result = self.users.update_one(
                 {'email': email},
                 {'$set': {
@@ -505,6 +510,7 @@ class Database:
     def verify_reset_token(self, token):
         """토큰 검증 및 사용자 정보 반환"""
         if self.use_mongodb:
+            from datetime import datetime
             user = self.users.find_one({'reset_token': token})
 
             if not user:
@@ -512,6 +518,13 @@ class Database:
 
             # 토큰 만료 확인
             expiry = user.get('reset_token_expiry')
+            if not expiry:
+                return None
+
+            # expiry가 datetime 객체인지 확인
+            if isinstance(expiry, str):
+                expiry = datetime.fromisoformat(expiry)
+
             if datetime.now() > expiry:
                 return None
 
