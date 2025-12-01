@@ -155,35 +155,62 @@ class Database:
 
     def create_user(self, username, email, password_hash):
         """신규 사용자 생성 (회원가입)"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from datetime import datetime
+            try:
+                result = self.users.insert_one({
+                    'username': username,
+                    'email': email,
+                    'password_hash': password_hash,
+                    'created_at': datetime.now()
+                })
+                return str(result.inserted_id)
+            except Exception as e:
+                print(f"MongoDB 사용자 생성 오류: {e}")
+                return None  # 중복된 username 또는 email
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        try:
-            cursor.execute('''
-                INSERT INTO users (username, email, password_hash)
-                VALUES (?, ?, ?)
-            ''', (username, email, password_hash))
-            conn.commit()
-            user_id = cursor.lastrowid
-            conn.close()
-            return user_id
-        except sqlite3.IntegrityError:
-            conn.close()
-            return None  # 중복된 username 또는 email
+            try:
+                cursor.execute('''
+                    INSERT INTO users (username, email, password_hash)
+                    VALUES (?, ?, ?)
+                ''', (username, email, password_hash))
+                conn.commit()
+                user_id = cursor.lastrowid
+                conn.close()
+                return user_id
+            except sqlite3.IntegrityError:
+                conn.close()
+                return None  # 중복된 username 또는 email
 
     def get_user_by_username(self, username):
         """username으로 사용자 정보 조회"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            user = self.users.find_one({'username': username})
+            if user:
+                return {
+                    'id': str(user['_id']),
+                    'username': user.get('username'),
+                    'email': user.get('email'),
+                    'password_hash': user.get('password_hash'),
+                    'created_at': user.get('created_at'),
+                    'last_login': user.get('last_login')
+                }
+            return None
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT id, username, email, password_hash, created_at, last_login
-            FROM users WHERE username = ?
-        ''', (username,))
-        user = cursor.fetchone()
-        conn.close()
+            cursor.execute('''
+                SELECT id, username, email, password_hash, created_at, last_login
+                FROM users WHERE username = ?
+            ''', (username,))
+            user = cursor.fetchone()
+            conn.close()
 
-        return dict(user) if user else None
+            return dict(user) if user else None
 
     def get_user_by_email(self, email):
         """email로 사용자 정보 조회"""
@@ -405,21 +432,49 @@ class Database:
 
     def get_user_stats(self, user_id):
         """사용자 통계 정보"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
 
-        cursor.execute('''
-            SELECT COUNT(*) as total_messages,
-                   MIN(timestamp) as first_interaction,
-                   MAX(timestamp) as last_interaction
-            FROM chat_history
-            WHERE user_id = ?
-        ''', (user_id,))
+            # user_id가 문자열이면 ObjectId로 변환
+            if isinstance(user_id, str):
+                user_id_obj = ObjectId(user_id)
+            else:
+                user_id_obj = user_id
 
-        stats = cursor.fetchone()
-        conn.close()
+            # 전체 메시지 수
+            total_messages = self.chat_history.count_documents({'user_id': user_id_obj})
 
-        return dict(stats) if stats else None
+            # 첫 번째 및 마지막 상호작용 시간
+            first_msg = self.chat_history.find_one(
+                {'user_id': user_id_obj},
+                sort=[('timestamp', 1)]
+            )
+            last_msg = self.chat_history.find_one(
+                {'user_id': user_id_obj},
+                sort=[('timestamp', -1)]
+            )
+
+            return {
+                'total_messages': total_messages,
+                'first_interaction': first_msg.get('timestamp').isoformat() if first_msg and first_msg.get('timestamp') else None,
+                'last_interaction': last_msg.get('timestamp').isoformat() if last_msg and last_msg.get('timestamp') else None
+            }
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT COUNT(*) as total_messages,
+                       MIN(timestamp) as first_interaction,
+                       MAX(timestamp) as last_interaction
+                FROM chat_history
+                WHERE user_id = ?
+            ''', (user_id,))
+
+            stats = cursor.fetchone()
+            conn.close()
+
+            return dict(stats) if stats else None
 
     def save_reset_token(self, email, token, expiry):
         """비밀번호 재설정 토큰 저장"""
