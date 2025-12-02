@@ -29,13 +29,14 @@ Flask 기반의 AI 고객지원 챗봇입니다. 사용자의 대화 이력을 �
 
 ### 🎨 UI/UX
 - ✅ **모던한 UI**: 반응형 웹 디자인
-- ✅ **다크모드**: 통합 색상 테마로 눈의 피로 감소 (통계 포함 완전 지원)
+- ✅ **다크모드**: 통합 색상 테마로 눈의 피로 감소 (통계, 뉴스 테이블 포함 완전 지원)
 - ✅ **테마 전환**: 라이트/다크 모드 자유 전환 (localStorage 저장)
 - ✅ **대화 검색**: 키워드로 과거 대화 검색 및 해당 메시지로 이동
 - ✅ **검색 하이라이트**: 검색 결과 클릭 시 해당 메시지로 스크롤 + 2초간 강조
 - ✅ **이미지 뷰어**: 이미지 클릭 시 원본 크기 팝업 보기 (줌 애니메이션)
 - ✅ **이메일 템플릿**: HTML 기반 비밀번호 재설정 이메일
 - ✅ **회원탈퇴**: 계정 삭제 기능 제공
+- ✅ **뉴스 테이블 다크모드**: 최신 뉴스 표시 시 다크 테마 자동 적용
 
 ### 📎 지원하는 파일 형식
 - **이미지**: jpg, jpeg, png, gif, webp (GPT-4 Vision으로 분석)
@@ -48,8 +49,14 @@ Flask 기반의 AI 고객지원 챗봇입니다. 사용자의 대화 이력을 �
 ### 💾 하이브리드 데이터베이스
 - **로컬 개발**: SQLite 사용 (빠른 개발 및 테스트)
 - **Vercel 배포**: MongoDB Atlas 사용 (영구 데이터 저장)
-- **자동 전환**: 환경 변수에 따라 자동으로 DB 선택
-- **비밀번호 재설정**: Vercel의 ephemeral 파일시스템 문제 해결 (MongoDB로 토큰 영구 저장)
+- **자동 전환**: 환경 변수(`MONGODB_URI`)에 따라 자동으로 DB 선택
+- **완전한 MongoDB 지원**:
+  - ✅ 회원가입/로그인 (사용자 조회 및 생성)
+  - ✅ 대화 이력 저장 및 조회
+  - ✅ 파일 첨부 정보 저장
+  - ✅ 비밀번호 재설정 토큰 관리
+  - ✅ 마지막 로그인 시간 업데이트
+- **Vercel 호환**: ephemeral 파일시스템 문제 완전 해결
 
 ## 프로젝트 구조
 
@@ -121,12 +128,23 @@ NEWS_API_KEY=your-news-api-key
 SMTP_EMAIL=your-email@gmail.com
 SMTP_PASSWORD=your-gmail-app-password
 BASE_URL=http://localhost:5000
+
+# MongoDB 설정 (선택사항 - Vercel 배포 시 필요)
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/dbname?retryWrites=true&w=majority
 ```
 
 **Gmail SMTP 설정 방법:**
 1. [Google 앱 비밀번호](https://myaccount.google.com/apppasswords) 생성
 2. 2단계 인증 활성화 필요
 3. 생성된 16자리 비밀번호를 `SMTP_PASSWORD`에 입력
+
+**MongoDB Atlas 설정 방법 (Vercel 배포 시):**
+1. [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) 무료 계정 생성
+2. 새 클러스터 생성 (무료 M0 티어 선택)
+3. Database Access에서 사용자 생성
+4. Network Access에서 `0.0.0.0/0` 추가 (모든 IP 허용)
+5. 클러스터 연결 → "Connect your application" 선택
+6. Connection String 복사하여 `MONGODB_URI`에 입력
 
 ### 3. 애플리케이션 실행
 
@@ -202,7 +220,8 @@ GPT API가 활성화되면 시작 메시지에 "GPT API 사용: True"로 표시�
 
 ### Backend
 - **Flask** 3.0.0 - 웹 프레임워크
-- **SQLite** - 데이터베이스
+- **SQLite** - 로컬 데이터베이스
+- **MongoDB Atlas** - 클라우드 데이터베이스 (Vercel 배포용)
 - **OpenAI API** - GPT 연동 (선택사항)
 
 ### Frontend
@@ -212,8 +231,9 @@ GPT API가 활성화되면 시작 메시지에 "GPT API 사용: True"로 표시�
 
 ## 데이터베이스 구조
 
-### users 테이블
+### SQLite (로컬 개발)
 
+**users 테이블**
 ```sql
 - id: INTEGER PRIMARY KEY
 - username: TEXT UNIQUE
@@ -225,8 +245,7 @@ GPT API가 활성화되면 시작 메시지에 "GPT API 사용: True"로 표시�
 - last_login: TIMESTAMP
 ```
 
-### chat_history 테이블
-
+**chat_history 테이블**
 ```sql
 - id: INTEGER PRIMARY KEY
 - user_id: INTEGER (FK)
@@ -234,6 +253,36 @@ GPT API가 활성화되면 시작 메시지에 "GPT API 사용: True"로 표시�
 - is_user: BOOLEAN
 - sentiment: TEXT
 - timestamp: TIMESTAMP
+```
+
+### MongoDB (Vercel 배포)
+
+**users 컬렉션**
+```javascript
+{
+  _id: ObjectId,
+  username: String (unique),
+  email: String (unique),
+  password_hash: String,
+  reset_token: String,
+  reset_token_expiry: Date,
+  created_at: Date,
+  last_login: Date
+}
+```
+
+**chat_history 컬렉션**
+```javascript
+{
+  _id: ObjectId,
+  user_id: String,
+  message: String,
+  is_user: Boolean,
+  sentiment: String,
+  timestamp: Date,
+  file_path: String (optional),
+  file_type: String (optional)
+}
 ```
 
 ## 구현된 기능 및 향후 계획
@@ -248,7 +297,8 @@ GPT API가 활성화되면 시작 메시지에 "GPT API 사용: True"로 표시�
 - ✅ 대화 검색 및 하이라이트 기능
 - ✅ 이미지 뷰어 (팝업)
 - ✅ 완전한 다크모드 지원
-- ✅ SQLite 데이터베이스
+- ✅ 하이브리드 데이터베이스 (SQLite/MongoDB 자동 전환)
+- ✅ MongoDB Atlas 완전 지원 (회원가입, 대화, 파일, 토큰 관리)
 - ✅ Vercel 서버리스 배포 최적화
 
 ### 향후 개선 방향 🔄

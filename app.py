@@ -727,7 +727,7 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
             response = openai_client.chat.completions.create(
                 model="gpt-4-vision-preview",
                 messages=messages,
-                max_tokens=300
+                max_tokens=1000
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -742,7 +742,7 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
-            max_tokens=200,
+            max_tokens=1000,
             temperature=0.7
         )
 

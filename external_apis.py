@@ -1131,26 +1131,26 @@ class NewsAPI:
                 # 출처 정리
                 source = source.replace('(', '').replace(')', '').replace('[', '').replace(']', '').strip()
 
-                # 표 형식 HTML로 포맷팅
+                # 표 형식 HTML로 포맷팅 (CSS 클래스 사용)
                 news_item = f"""
                 <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">{item_count}</td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;"><a href="{url}" target="_blank" style="color: #4A90E2; text-decoration: none;">{title}</a></td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd; color: #888;">{source}</td>
+                    <td>{item_count}</td>
+                    <td><a href="{url}" target="_blank" class="news-link">{title}</a></td>
+                    <td class="news-source">{source}</td>
                 </tr>"""
 
                 news_items.append(news_item)
 
-            # 최종 뉴스 텍스트 (HTML 표 형식)
+            # 최종 뉴스 텍스트 (HTML 표 형식 - CSS 클래스 사용)
             news_text = f"""
-            <div style="font-family: Arial, sans-serif;">
-                <h3 style="color: #333;">📰 최신 뉴스</h3>
-                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <div class="news-table-wrapper">
+                <h3 class="news-title">📰 최신 뉴스</h3>
+                <table class="news-table">
                     <thead>
-                        <tr style="background-color: #f5f5f5;">
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; width: 30px;">#</th>
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd;">제목</th>
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #ddd; width: 120px;">출처</th>
+                        <tr>
+                            <th style="width: 30px;">#</th>
+                            <th>제목</th>
+                            <th style="width: 120px;">출처</th>
                         </tr>
                     </thead>
                     <tbody>
