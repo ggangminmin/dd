@@ -762,9 +762,9 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
         messages.append({"role": "user", "content": message_with_search})
 
     try:
-        # GPT API 호출 (GPT-3.5-turbo)
+        # GPT API 호출 (GPT-4)
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=messages,
             max_tokens=1000,
             temperature=0.7
