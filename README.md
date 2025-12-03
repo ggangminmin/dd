@@ -17,15 +17,18 @@ Flask 기반의 AI 고객지원 챗봇입니다. 사용자의 대화 이력을 �
 - ✅ **사용자별 이력 관리**: 로그인한 사용자의 대화 내용 자동 불러오기
 - ✅ **감정 분석**: 사용자의 말투와 감정을 분석 (화남, 슬픔, 기쁨, 공손, 중립)
 - ✅ **응답 어조 조절**: 감정에 맞춰 적절한 어조로 응답
-- ✅ **GPT API 연동**: OpenAI GPT-3.5 및 GPT-4 Vision 지원
+- ✅ **GPT API 연동**: OpenAI GPT-4 및 GPT-4 Vision 지원
 - ✅ **현재 날짜 인식**: GPT가 현재 날짜를 자동으로 인식하여 응답
 - ✅ **파일 첨부 기능**: 이미지, 문서, 엑셀 등 다양한 파일 형식 지원
 - ✅ **대화 통계**: 총 대화 수, 첫/마지막 대화 시간 등 통계 제공
+- ✅ **대화 검색**: MongoDB 지원으로 키워드 기반 대화 내용 검색
+- ✅ **대화 삭제**: MongoDB 지원으로 전체 대화 이력 삭제 기능
 
 ### 🌐 외부 API 통합
 - ✅ **날씨 정보**: OpenWeatherMap API를 통한 실시간 날씨 조회
 - ✅ **뉴스 정보**: NewsAPI를 통한 최신 뉴스 제공
-- ✅ **자동 감지**: 사용자 질문에서 날씨/뉴스 요청 자동 인식
+- ✅ **웹 검색**: Google Custom Search API를 통한 실시간 링크 제공
+- ✅ **자동 감지**: 사용자 질문에서 날씨/뉴스/링크 요청 자동 인식
 
 ### 🎨 UI/UX
 - ✅ **모던한 UI**: 반응형 웹 디자인
@@ -124,6 +127,10 @@ OPENWEATHER_API_KEY=your-weather-api-key
 # 뉴스 API (NewsAPI)
 NEWS_API_KEY=your-news-api-key
 
+# Google Custom Search API (웹 검색 기능용)
+GOOGLE_SEARCH_API_KEY=your-google-search-api-key
+GOOGLE_SEARCH_ENGINE_ID=your-search-engine-id
+
 # Gmail SMTP 설정 (비밀번호 재설정용)
 SMTP_EMAIL=your-email@gmail.com
 SMTP_PASSWORD=your-gmail-app-password
@@ -137,6 +144,14 @@ MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/dbname?retryWrit
 1. [Google 앱 비밀번호](https://myaccount.google.com/apppasswords) 생성
 2. 2단계 인증 활성화 필요
 3. 생성된 16자리 비밀번호를 `SMTP_PASSWORD`에 입력
+
+**Google Custom Search API 설정 방법:**
+1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials)에서 API 키 생성
+2. [Programmable Search Engine](https://programmablesearchengine.google.com/controlpanel/all)에서 검색 엔진 생성
+   - "Search the entire web" 선택
+   - Search Engine ID (cx) 복사
+3. API 키와 Search Engine ID를 환경 변수에 입력
+4. 하루 100회 무료 검색 제한
 
 **MongoDB Atlas 설정 방법 (Vercel 배포 시):**
 1. [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) 무료 계정 생성
