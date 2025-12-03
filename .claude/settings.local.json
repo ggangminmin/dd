@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 3 bash:*)",
+      "Bash(python app.py:*)",
+      "Bash(python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: 이천, 거제 등 작은 도시 날씨 조회 개선\n\n- OpenWeatherMap API가 인식하지 못하는 작은 도시를 fallback 시스템에 추가\n- 이천 → 수원으로 매핑\n- 거제 → 부산으로 매핑\n- 여주 → 수원으로 매핑 (이천에서 변경)\n\n이제 전국 더 많은 도시의 날씨를 조회할 수 있습니다.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(iconv:*)",
+      "Bash(git commit:*)",
+      "Bash(del chat_history.db)",
+      "Bash(.env.example)",
+      "Bash(timeout /t 3)",
+      "Bash(ping:*)",
+      "Bash(nul)",
+      "Bash(taskkill:*)",
+      "Bash(pip install:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(timeout:*)",
+      "Bash(exit 0)",
+      "Bash(if exist __pycache__ rmdir /S /Q __pycache__)",
+      "Bash(if exist *.pyc del /Q *.pyc)",
+      "Bash(del nul)",
+      "Bash(gh repo view:*)",
+      "Bash(git remote:*)",
+      "Bash(cat:*)",
+      "Bash(git reset:*)",
+      "Bash(echo:*)",
+      "Bash(if exist nul del /Q nul)",
+      "Bash(del \"c:\\Users\\AIWEB\\OneDrive - 지피티코리아\\문서\\GitHub\\dd\\test_search.py\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

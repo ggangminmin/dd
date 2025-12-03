@@ -7,7 +7,7 @@ from config import Config
 from database import Database
 from sentiment_analyzer import SentimentAnalyzer
 from file_processor import FileProcessor
-from external_apis import ExternalAPIManager
+from external_apis import ExternalAPIManager, search_google
 from email_service import EmailService
 import os
 import json
@@ -674,13 +674,32 @@ def generate_rule_based_response(message, sentiment):
 
 def generate_gpt_response(user_id, message, sentiment, has_image=False, image_infos=None):
     """
-    GPT API를 사용한 응답 생성 (이미지 지원)
+    GPT API를 사용한 응답 생성 (이미지 지원 + 웹 검색)
     """
     if not openai_client:
         return generate_rule_based_response(message, sentiment)
 
     # 이전 대화 이력 가져오기
     history = db.get_user_history(user_id, limit=5)
+
+    # 링크 요청 감지 (키워드 기반)
+    needs_search = any(keyword in message.lower() for keyword in [
+        '링크', 'url', '사이트', '웹사이트', '홈페이지', '주소',
+        '최신', '뉴스', '정보', '검색', '찾아'
+    ])
+
+    # 웹 검색 결과 추가
+    search_results = ""
+    if needs_search:
+        try:
+            # Google 검색 수행
+            results = search_google(message)
+            if results:
+                search_results = "\n\n[웹 검색 결과]\n"
+                for idx, result in enumerate(results[:3], 1):
+                    search_results += f"{idx}. {result['title']}\n   {result['link']}\n   {result['snippet']}\n\n"
+        except Exception as e:
+            print(f"웹 검색 오류: {e}")
 
     # 시스템 프롬프트 (감정에 따라 조절)
     tone_info = sentiment_analyzer.get_response_tone(sentiment)
@@ -697,6 +716,8 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 4. 이전 대화 내용을 참고하여 맥락을 유지하세요.
 5. 첨부된 파일이 있다면 그 내용을 분석하여 답변하세요.
 6. 날짜를 물어보면 위에 명시된 현재 날짜를 사용하세요.
+7. 사용자가 링크나 URL을 요청하면, 아래 [웹 검색 결과]의 링크를 참고하여 제공하세요.
+8. 웹 검색 결과가 있다면 반드시 실제 링크를 포함하여 답변하세요.
 """
 
     # 대화 이력을 메시지 형식으로 변환
@@ -709,7 +730,8 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     # 현재 메시지 추가 (이미지가 있으면 GPT-4 Vision 사용)
     if has_image and image_infos:
         # GPT-4 Vision을 사용하여 이미지 분석
-        content = [{"type": "text", "text": message}]
+        message_with_search = message + search_results if search_results else message
+        content = [{"type": "text", "text": message_with_search}]
 
         for img_info in image_infos:
             if 'base64' in img_info:
@@ -732,13 +754,15 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
             return response.choices[0].message.content
         except Exception as e:
             print(f"GPT-4 Vision API 오류: {e}")
-            # Vision 실패 시 일반 GPT-3.5로 폴백
-            messages[-1] = {"role": "user", "content": message}
+            # Vision 실패 시 일반 GPT-4로 폴백
+            message_with_search = message + search_results if search_results else message
+            messages[-1] = {"role": "user", "content": message_with_search}
     else:
-        messages.append({"role": "user", "content": message})
+        message_with_search = message + search_results if search_results else message
+        messages.append({"role": "user", "content": message_with_search})
 
     try:
-        # GPT API 호출
+        # GPT API 호출 (GPT-3.5-turbo)
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
@@ -821,15 +845,18 @@ def search_messages():
     if not user_id:
         return jsonify({'error': '로그인이 필요합니다.'}), 401
 
-    # 검색 파라미터
     keyword = request.args.get('keyword', '').strip()
 
     if not keyword:
         return jsonify({'error': '검색어를 입력해주세요.'}), 400
 
     try:
+        print(f"[검색 API] user_id: {user_id}, keyword: {keyword}")
+
         # 데이터베이스에서 검색
         result = db.search_messages(user_id, keyword=keyword, limit=100)
+
+        print(f"[검색 API] 결과: total={result['total']}, messages={len(result['messages'])}")
 
         return jsonify({
             'success': True,
@@ -838,7 +865,9 @@ def search_messages():
             'total': result['total']
         })
     except Exception as e:
-        print(f"[검색 오류] {str(e)}")
+        print(f"[검색 API 오류] {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': '검색 중 오류가 발생했습니다.'}), 500
 
 

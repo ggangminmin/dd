@@ -1283,3 +1283,56 @@ class ExternalAPIManager:
             return self.news_api.get_top_news(count=10)
 
         return None
+
+
+def search_google(query: str, num_results: int = 3) -> list:
+    """
+    Google 검색 수행 (Custom Search API)
+
+    Args:
+        query: 검색 쿼리
+        num_results: 반환할 결과 개수
+
+    Returns:
+        검색 결과 리스트 (title, link, snippet)
+    """
+    try:
+        import requests
+        from dotenv import load_dotenv
+        import os
+
+        load_dotenv()
+
+        # Google Custom Search API 키와 검색 엔진 ID
+        api_key = os.getenv('GOOGLE_SEARCH_API_KEY')
+        search_engine_id = os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+
+        if not api_key or not search_engine_id:
+            print("[웹 검색] Google Search API 키가 설정되지 않았습니다.")
+            return []
+
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            'key': api_key,
+            'cx': search_engine_id,
+            'q': query,
+            'num': num_results
+        }
+
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for item in data.get('items', []):
+            results.append({
+                'title': item.get('title', ''),
+                'link': item.get('link', ''),
+                'snippet': item.get('snippet', '')
+            })
+
+        return results
+
+    except Exception as e:
+        print(f"[웹 검색 오류] {e}")
+        return []

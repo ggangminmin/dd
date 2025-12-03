@@ -592,24 +592,44 @@ class Database:
 
     def delete_all_messages(self, user_id):
         """사용자의 모든 대화 기록 삭제"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if self.use_mongodb:
+            from bson.objectid import ObjectId
 
-        # 먼저 첨부 파일 정보 삭제
-        cursor.execute('''
-            DELETE FROM file_attachments
-            WHERE message_id IN (
-                SELECT id FROM chat_history WHERE user_id = ?
-            )
-        ''', (user_id,))
+            # user_id를 ObjectId로 변환
+            if isinstance(user_id, str):
+                user_id_obj = ObjectId(user_id)
+            else:
+                user_id_obj = user_id
 
-        # 대화 기록 삭제
-        cursor.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
+            # 먼저 해당 user_id의 메시지 ID 찾기
+            message_ids = [msg['_id'] for msg in self.chat_history.find({'user_id': user_id_obj})]
 
-        conn.commit()
-        affected = cursor.rowcount
-        conn.close()
-        return affected
+            # 첨부 파일 정보 삭제
+            if message_ids:
+                self.file_attachments.delete_many({'message_id': {'$in': message_ids}})
+
+            # 대화 기록 삭제
+            result = self.chat_history.delete_many({'user_id': user_id_obj})
+            return result.deleted_count
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            # 먼저 첨부 파일 정보 삭제
+            cursor.execute('''
+                DELETE FROM file_attachments
+                WHERE message_id IN (
+                    SELECT id FROM chat_history WHERE user_id = ?
+                )
+            ''', (user_id,))
+
+            # 대화 기록 삭제
+            cursor.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
+
+            conn.commit()
+            affected = cursor.rowcount
+            conn.close()
+            return affected
 
     def delete_user(self, user_id):
         """사용자 계정 삭제"""
@@ -705,80 +725,163 @@ class Database:
     
     # ==================== 대화 기록 검색/필터링 ====================
     
-    def search_messages(self, user_id, keyword=None, start_date=None, end_date=None, 
+    def search_messages(self, user_id, keyword=None, start_date=None, end_date=None,
                        sentiment=None, limit=50, offset=0):
         """대화 기록 검색 및 필터링"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        query = '''
-            SELECT id, message, is_user, sentiment, timestamp
-            FROM chat_history
-            WHERE user_id = ?
-        '''
-        params = [user_id]
-        
-        # 키워드 검색
-        if keyword:
-            query += ' AND message LIKE ?'
-            params.append(f'%{keyword}%')
-        
-        # 날짜 범위 필터
-        if start_date:
-            query += ' AND timestamp >= ?'
-            params.append(start_date)
-        
-        if end_date:
-            query += ' AND timestamp <= ?'
-            params.append(end_date)
-        
-        # 감정 필터
-        if sentiment:
-            query += ' AND sentiment = ?'
-            params.append(sentiment)
-        
-        # 정렬 및 페이지네이션
-        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
-        params.extend([limit, offset])
-        
-        cursor.execute(query, params)
-        messages = cursor.fetchall()
-        
-        # 전체 개수 조회
-        count_query = '''
-            SELECT COUNT(*) as total
-            FROM chat_history
-            WHERE user_id = ?
-        '''
-        count_params = [user_id]
-        
-        if keyword:
-            count_query += ' AND message LIKE ?'
-            count_params.append(f'%{keyword}%')
-        
-        if start_date:
-            count_query += ' AND timestamp >= ?'
-            count_params.append(start_date)
-        
-        if end_date:
-            count_query += ' AND timestamp <= ?'
-            count_params.append(end_date)
-        
-        if sentiment:
-            count_query += ' AND sentiment = ?'
-            count_params.append(sentiment)
-        
-        cursor.execute(count_query, count_params)
-        total = cursor.fetchone()['total']
-        
-        conn.close()
-        
-        return {
-            'messages': [dict(msg) for msg in messages],
-            'total': total,
-            'limit': limit,
-            'offset': offset
-        }
+        if self.use_mongodb:
+            # MongoDB 검색
+            try:
+                from bson.objectid import ObjectId
+
+                # user_id를 ObjectId로 변환 (MongoDB에 ObjectId로 저장되어 있음)
+                if isinstance(user_id, str):
+                    user_id_obj = ObjectId(user_id)
+                else:
+                    user_id_obj = user_id
+
+                # 기본 쿼리
+                query = {'user_id': user_id_obj}
+
+                # 키워드 검색 (정규식 사용, 대소문자 구분 없음)
+                if keyword:
+                    query['message'] = {'$regex': keyword, '$options': 'i'}
+
+                # 날짜 범위 필터
+                if start_date or end_date:
+                    query['timestamp'] = {}
+                    if start_date:
+                        query['timestamp']['$gte'] = start_date
+                    if end_date:
+                        query['timestamp']['$lte'] = end_date
+
+                # 감정 필터
+                if sentiment:
+                    query['sentiment'] = sentiment
+
+                print(f"[MongoDB 검색] 쿼리: {query}")
+
+                # 샘플 데이터 확인 (디버깅용)
+                sample = list(self.chat_history.find({'user_id': user_id_obj}).limit(1))
+                if sample:
+                    print(f"[MongoDB 검색] 샘플 데이터 user_id: {sample[0].get('user_id')}")
+                else:
+                    print(f"[MongoDB 검색] user_id '{user_id_obj}'로 저장된 메시지가 없습니다.")
+                    # 모든 user_id 확인
+                    all_user_ids = self.chat_history.distinct('user_id')
+                    print(f"[MongoDB 검색] DB에 존재하는 user_id 목록: {all_user_ids}")
+
+                # 전체 개수 조회
+                total = self.chat_history.count_documents(query)
+                print(f"[MongoDB 검색] 전체 개수: {total}")
+
+                # 메시지 조회 (정렬 및 페이지네이션)
+                messages = list(self.chat_history.find(query)
+                              .sort('timestamp', -1)  # 최신순
+                              .skip(offset)
+                              .limit(limit))
+
+                print(f"[MongoDB 검색] 조회된 메시지 수: {len(messages)}")
+
+                # MongoDB ObjectId를 문자열로 변환
+                for msg in messages:
+                    msg['id'] = str(msg['_id'])
+                    msg['user_id'] = str(msg['user_id'])  # user_id도 문자열로 변환
+                    if 'timestamp' in msg:
+                        if hasattr(msg['timestamp'], 'isoformat'):
+                            msg['timestamp'] = msg['timestamp'].isoformat()
+                        else:
+                            msg['timestamp'] = str(msg['timestamp'])
+                    del msg['_id']
+
+                return {
+                    'messages': messages,
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset
+                }
+            except Exception as e:
+                print(f"[MongoDB 검색 오류] {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return {
+                    'messages': [],
+                    'total': 0,
+                    'limit': limit,
+                    'offset': offset
+                }
+        else:
+            # SQLite 검색
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            query = '''
+                SELECT id, message, is_user, sentiment, timestamp
+                FROM chat_history
+                WHERE user_id = ?
+            '''
+            params = [user_id]
+
+            # 키워드 검색
+            if keyword:
+                query += ' AND message LIKE ?'
+                params.append(f'%{keyword}%')
+
+            # 날짜 범위 필터
+            if start_date:
+                query += ' AND timestamp >= ?'
+                params.append(start_date)
+
+            if end_date:
+                query += ' AND timestamp <= ?'
+                params.append(end_date)
+
+            # 감정 필터
+            if sentiment:
+                query += ' AND sentiment = ?'
+                params.append(sentiment)
+
+            # 정렬 및 페이지네이션
+            query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?'
+            params.extend([limit, offset])
+
+            cursor.execute(query, params)
+            messages = cursor.fetchall()
+
+            # 전체 개수 조회
+            count_query = '''
+                SELECT COUNT(*) as total
+                FROM chat_history
+                WHERE user_id = ?
+            '''
+            count_params = [user_id]
+
+            if keyword:
+                count_query += ' AND message LIKE ?'
+                count_params.append(f'%{keyword}%')
+
+            if start_date:
+                count_query += ' AND timestamp >= ?'
+                count_params.append(start_date)
+
+            if end_date:
+                count_query += ' AND timestamp <= ?'
+                count_params.append(end_date)
+
+            if sentiment:
+                count_query += ' AND sentiment = ?'
+                count_params.append(sentiment)
+
+            cursor.execute(count_query, count_params)
+            total = cursor.fetchone()['total']
+
+            conn.close()
+
+            return {
+                'messages': [dict(msg) for msg in messages],
+                'total': total,
+                'limit': limit,
+                'offset': offset
+            }
     
     def get_messages_by_date_range(self, user_id, start_date, end_date):
         """특정 기간의 메시지 조회"""
