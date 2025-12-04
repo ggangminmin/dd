@@ -1917,3 +1917,100 @@ body[data-theme="dark"] .news-source {
     color: #9ca3af;
 }
 
+/* 검색 결과 테이블 스타일 (뉴스와 동일) */
+.search-table-wrapper {
+    font-family: Arial, sans-serif;
+    margin: 10px 0;
+}
+
+.search-title {
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 18px;
+}
+
+.search-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.search-table thead {
+    background-color: #f5f5f5;
+}
+
+.search-table th {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 2px solid #ddd;
+    font-weight: 600;
+    color: #333;
+}
+
+.search-table td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    color: #333;
+}
+
+.search-link {
+    color: #4A90E2;
+    text-decoration: none;
+    transition: color 0.2s;
+    font-weight: 500;
+}
+
+.search-link:hover {
+    color: #667eea;
+    text-decoration: underline;
+}
+
+.search-snippet {
+    color: #666;
+    font-size: 0.9em;
+    margin-top: 4px;
+}
+
+/* 다크모드 - 검색 결과 테이블 */
+body[data-theme="dark"] .search-table-wrapper {
+    background: transparent;
+}
+
+body[data-theme="dark"] .search-title {
+    color: #e0e7ff;
+}
+
+body[data-theme="dark"] .search-table {
+    background: rgba(30, 30, 46, 0.8);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+body[data-theme="dark"] .search-table thead {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.4) 0%, rgba(118, 75, 162, 0.4) 100%);
+}
+
+body[data-theme="dark"] .search-table th {
+    color: #e0e7ff;
+    border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+}
+
+body[data-theme="dark"] .search-table td {
+    border-bottom: 1px solid rgba(102, 126, 234, 0.2);
+    color: #e0e7ff;
+}
+
+body[data-theme="dark"] .search-link {
+    color: #a5b4fc;
+}
+
+body[data-theme="dark"] .search-link:hover {
+    color: #c7d2fe;
+}
+
+body[data-theme="dark"] .search-snippet {
+    color: #9ca3af;
+}
+

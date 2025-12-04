@@ -1288,10 +1288,11 @@ class ExternalAPIManager:
 def search_google(query: str, num_results: int = 3) -> list:
     """
     Google 검색 수행 (Custom Search API)
+    최근 1년 이내 결과 + 한국어 우선
 
     Args:
         query: 검색 쿼리
-        num_results: 반환할 결과 개수
+        num_results: 반환할 결과 개수 (최대 10개)
 
     Returns:
         검색 결과 리스트 (title, link, snippet)
@@ -1300,6 +1301,7 @@ def search_google(query: str, num_results: int = 3) -> list:
         import requests
         from dotenv import load_dotenv
         import os
+        from datetime import datetime, timedelta
 
         load_dotenv()
 
@@ -1311,12 +1313,24 @@ def search_google(query: str, num_results: int = 3) -> list:
             print("[웹 검색] Google Search API 키가 설정되지 않았습니다.")
             return []
 
+        # API 제한: 최대 10개
+        num_results = min(num_results, 10)
+
+        # 최근 1년 날짜 범위 계산
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        date_restrict = f"d365"  # 최근 365일
+
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
             'key': api_key,
             'cx': search_engine_id,
             'q': query,
-            'num': num_results
+            'num': num_results,
+            'dateRestrict': date_restrict,  # 최근 1년 이내
+            'lr': 'lang_ko',  # 한국어 우선
+            'hl': 'ko',  # 인터페이스 언어 한국어
+            'gl': 'kr'  # 한국 지역 우선
         }
 
         response = requests.get(url, params=params, timeout=10)
@@ -1324,13 +1338,18 @@ def search_google(query: str, num_results: int = 3) -> list:
         data = response.json()
 
         results = []
-        for item in data.get('items', []):
+        for idx, item in enumerate(data.get('items', []), 1):
+            link = item.get('link', '')
+            title = item.get('title', '')
             results.append({
-                'title': item.get('title', ''),
-                'link': item.get('link', ''),
+                'title': title,
+                'link': link,
                 'snippet': item.get('snippet', '')
             })
+            # 디버깅: 각 링크 출력
+            print(f"  [{idx}] {title[:50]}... -> {link}")
 
+        print(f"[웹 검색] '{query}' 검색 완료: {len(results)}개 결과 (최근 1년)")
         return results
 
     except Exception as e:
