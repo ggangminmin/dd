@@ -686,46 +686,49 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     # 이전 대화 이력 가져오기
     history = db.get_user_history(user_id, limit=5)
 
+    # 웹 검색 기능 임시 비활성화 (Google API 403 오류로 인해)
     # 링크 요청 감지 (키워드 기반)
-    search_keywords = ['링크', 'url', '사이트', '웹사이트', '홈페이지', '주소',
-                       '최신', '뉴스', '정보', '검색', '찾아', '추천', '맛집', '리스트']
-    needs_search = any(keyword in message.lower() for keyword in search_keywords)
+    # search_keywords = ['링크', 'url', '사이트', '웹사이트', '홈페이지', '주소',
+    #                    '최신', '뉴스', '정보', '검색', '찾아', '추천', '맛집', '리스트']
+    # needs_search = any(keyword in message.lower() for keyword in search_keywords)
 
-    # 디버깅: 키워드 감지 로그
-    if needs_search:
-        matched_keywords = [kw for kw in search_keywords if kw in message.lower()]
-        print(f"[키워드 감지] '{message}' - 매칭된 키워드: {matched_keywords}")
+    # # 디버깅: 키워드 감지 로그
+    # if needs_search:
+    #     matched_keywords = [kw for kw in search_keywords if kw in message.lower()]
+    #     print(f"[키워드 감지] '{message}' - 매칭된 키워드: {matched_keywords}")
 
-    # TOP N 요청 감지 (TOP10, TOP 10, 상위 10개, 10가지 등)
-    import re
-    top_n_match = re.search(r'(?:top|상위|추천)\s*(\d+)|(\d+)\s*(?:개|가지|곳)', message.lower())
-    num_results = 10 if top_n_match else 3  # TOP N 요청이면 해당 개수, 아니면 기본 3개
+    # # TOP N 요청 감지 (TOP10, TOP 10, 상위 10개, 10가지 등)
+    # import re
+    # top_n_match = re.search(r'(?:top|상위|추천)\s*(\d+)|(\d+)\s*(?:개|가지|곳)', message.lower())
+    # num_results = 10 if top_n_match else 3  # TOP N 요청이면 해당 개수, 아니면 기본 3개
 
-    if top_n_match:
-        try:
-            requested_num = int(top_n_match.group(1) or top_n_match.group(2))
-            num_results = min(requested_num, 10)  # 최대 10개
-            needs_search = True  # TOP N 요청은 자동으로 검색 활성화
-            print(f"[TOP N 감지] {num_results}개 검색 요청")
-        except:
-            num_results = 10
+    # if top_n_match:
+    #     try:
+    #         requested_num = int(top_n_match.group(1) or top_n_match.group(2))
+    #         num_results = min(requested_num, 10)  # 최대 10개
+    #         needs_search = True  # TOP N 요청은 자동으로 검색 활성화
+    #         print(f"[TOP N 감지] {num_results}개 검색 요청")
+    #     except:
+    #         num_results = 10
 
-    # 웹 검색 결과 추가
-    search_results = ""
-    if needs_search:
-        print(f"[웹 검색 시작] 쿼리: '{message}', 개수: {num_results}")
-        try:
-            # Google 검색 수행
-            results = search_google(message, num_results=num_results)
-            if results:
-                search_results = "\n\n[웹 검색 결과]\n"
-                for idx, result in enumerate(results, 1):
-                    search_results += f"{idx}. {result['title']}\n   {result['link']}\n   {result['snippet']}\n\n"
-                print(f"[웹 검색 완료] {len(results)}개 결과 GPT에 전달")
-            else:
-                print("[웹 검색] 결과 없음")
-        except Exception as e:
-            print(f"[웹 검색 오류] {e}")
+    # # 웹 검색 결과 추가
+    # search_results = ""
+    # if needs_search:
+    #     print(f"[웹 검색 시작] 쿼리: '{message}', 개수: {num_results}")
+    #     try:
+    #         # Google 검색 수행
+    #         results = search_google(message, num_results=num_results)
+    #         if results:
+    #             search_results = "\n\n[웹 검색 결과]\n"
+    #             for idx, result in enumerate(results, 1):
+    #                 search_results += f"{idx}. {result['title']}\n   {result['link']}\n   {result['snippet']}\n\n"
+    #             print(f"[웹 검색 완료] {len(results)}개 결과 GPT에 전달")
+    #         else:
+    #             print("[웹 검색] 결과 없음")
+    #     except Exception as e:
+    #         print(f"[웹 검색 오류] {e}")
+
+    search_results = ""  # 웹 검색 비활성화
 
     # 시스템 프롬프트 (감정에 따라 조절)
     tone_info = sentiment_analyzer.get_response_tone(sentiment)
@@ -735,7 +738,7 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 사용자의 현재 감정: {sentiment}
 응답 스타일: {tone_info['style']}
 
-⚠️ 중요: 당신의 학습 데이터는 2023년 10월까지입니다. 최신 정보나 링크는 아래 [웹 검색 결과]에서만 가져와야 합니다.
+⚠️ 중요: 당신의 학습 데이터는 2024년 10월까지입니다.
 
 다음 지침을 따라주세요:
 1. 항상 공손하고 도움이 되는 답변을 제공하세요.
@@ -745,55 +748,42 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 5. 첨부된 파일이 있다면 그 내용을 분석하여 답변하세요.
 6. 날짜를 물어보면 위에 명시된 현재 날짜를 사용하세요.
 
-🔗 링크 및 URL 관련 규칙 (절대 위반 금지!!!):
+📋 **맛집, 카페, 장소 추천 시 표 형식 사용 (필수!):**
 
-⚠️ **절대 엄수 사항 - 이것은 매우 중요합니다!**
-
-7. 아무 링크도 임의로 만들지 마세요.
-8. 실제 웹 검색 API([웹 검색 결과])에서 제공된 URL만 **문자 그대로 복사**하여 사용하세요.
-9. 만약 검색 API에서 URL이 제공되지 않았다면 "링크 없음"이라고 적어주세요.
-10. 존재하지 않는 도메인을 추측하거나 생성하지 마세요.
-11. 제공된 URL을 수정하거나 변형하지 마세요.
-12. 검색 결과에 없는 업체는 만들어내지 마세요.
-13. 잘 모르거나 검색 결과에 없는 정보는 "정보 없음"이라고 답하세요.
-14. 당신의 2023년 지식으로 링크를 만들지 마세요. 반드시 [웹 검색 결과]만 사용하세요.
-
-📋 검색 결과 표시 형식 (반드시 따라주세요!):
-15. 검색 결과를 표시할 때는 **반드시 아래 HTML 표 형식**을 사용하세요:
+7. 맛집, 카페, 관광지 등 추천 요청 시 **반드시 아래 HTML 표 형식**을 사용하세요:
 
 <div class="search-table-wrapper">
-    <h3 class="search-title">🔍 검색 결과</h3>
+    <h3 class="search-title">✨ 추천 장소</h3>
     <table class="search-table">
         <thead>
             <tr>
-                <th style="width: 40px;">#</th>
-                <th>제목</th>
-                <th style="width: 250px;">설명</th>
+                <th>#</th>
+                <th>이름</th>
+                <th>설명</th>
             </tr>
         </thead>
         <tbody>
             <tr>
                 <td>1</td>
-                <td><a href="정확한URL" target="_blank" class="search-link">제목</a></td>
-                <td class="search-snippet">간단한 설명</td>
+                <td><strong>장소 이름</strong></td>
+                <td class="search-snippet">위치, 특징, 대표 메뉴 등 간단한 설명</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td><strong>장소 이름</strong></td>
+                <td class="search-snippet">위치, 특징, 대표 메뉴 등 간단한 설명</td>
             </tr>
         </tbody>
     </table>
 </div>
 
-16. **제목 추출 규칙:**
-    - 맛집/식당 검색: [웹 검색 결과]의 title과 snippet에서 **식당의 정확한 이름만** 추출하세요
-    - 카페 검색: 카페의 정확한 이름만 추출하세요
-    - 블로그 제목, 날짜, 부가 설명은 모두 제거하세요
-    - 예시: "서울 성수동 한식 맛집 베스트 10 - 네이버 블로그" → "식당이름" (snippet에서 찾기)
-    - 식당명이 불명확하면 title을 짧게 정리하되, 핵심만 남기세요
-17. **링크 사용 규칙 (절대 엄수!):**
-    - [웹 검색 결과]의 link를 **한 글자도 변경하지 말고 그대로** 사용하세요
-    - link가 없으면 "링크 없음"이라고 표시하세요
-    - 절대 임의로 URL을 만들지 마세요
-18. 설명란에는 snippet을 간략하게 요약하거나, 위치/특징을 적어주세요.
-19. 검색 결과가 여러 개면 모든 결과를 <tr> 태그로 추가하세요 (최대 10개).
-20. 표 위나 아래에 간단한 인사말이나 추가 설명을 덧붙여도 좋습니다.
+8. **표 작성 규칙:**
+   - 이름: 간결하고 정확한 장소명만 (예: "테라로사 커피"), 링크는 절대 포함하지 마세요
+   - 설명: 위치(동/구), 특징, 대표 메뉴, 분위기 등을 간단하게 요약
+   - 2024년 10월까지의 지식을 바탕으로 유명하고 검증된 장소를 추천
+   - 표 위에 간단한 인사말 추가 가능 (예: "서울의 인기 카페 5곳을 추천드립니다!")
+
+9. 추천이 아닌 일반 질문은 표 형식을 사용하지 마세요.
 """
 
     # 대화 이력을 메시지 형식으로 변환
@@ -821,16 +811,16 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
         messages.append({"role": "user", "content": content})
 
         try:
-            # GPT-4 Vision API 호출
+            # GPT-4o Vision API 호출
             response = openai_client.chat.completions.create(
-                model="gpt-4-vision-preview",
+                model="gpt-4o",
                 messages=messages,
                 max_tokens=1000
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"GPT-4 Vision API 오류: {e}")
-            # Vision 실패 시 일반 GPT-4로 폴백
+            print(f"GPT-4o Vision API 오류: {e}")
+            # Vision 실패 시 일반 GPT-4o로 폴백
             message_with_search = message + search_results if search_results else message
             messages[-1] = {"role": "user", "content": message_with_search}
     else:
@@ -838,9 +828,9 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
         messages.append({"role": "user", "content": message_with_search})
 
     try:
-        # GPT API 호출 (GPT-4)
+        # GPT API 호출 (GPT-4o)
         response = openai_client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=messages,
             max_tokens=1000,
             temperature=0.7
