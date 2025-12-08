@@ -734,6 +734,21 @@ async function sendMessage() {
         // 봇 응답 표시
         addBotMessage(data.response);
 
+        // 차트 데이터가 있으면 차트 렌더링 (여러 차트 지원)
+        if (data.chart_data_list && data.chart_data_list.length > 0) {
+            console.log(`[차트] ${data.chart_data_list.length}개 차트 데이터 수신`);
+            data.chart_data_list.forEach((chartData, index) => {
+                const sheetName = chartData.sheet_name || `차트 ${index + 1}`;
+                console.log(`[차트] ${sheetName} 렌더링`);
+                renderChart(chartData);
+            });
+        }
+        // 단일 차트 지원 (하위 호환성)
+        else if (data.chart_data) {
+            console.log('[차트] 차트 데이터 수신:', data.chart_data);
+            renderChart(data.chart_data);
+        }
+
         // 감정 정보 표시
         if (data.sentiment_info) {
             showSentimentInfo(data.sentiment_info);
@@ -949,8 +964,21 @@ function addBotMessage(message, scroll = true, timestamp = null) {
     // HTML 포함 여부 확인 (뉴스, 표 등)
     const containsHtml = message.includes('<') && message.includes('>');
 
+    // 메시지 포맷팅 (긴 텍스트 처리)
+    let formattedMessage = containsHtml ? message : escapeHtml(message);
+
+    // 파일 내용 구분자 감지 및 카드 형식 적용
+    if (formattedMessage.includes('[첨부된 파일 내용]') || formattedMessage.includes('[📊 자동 데이터 분석 결과]')) {
+        formattedMessage = formatFileContentMessage(formattedMessage);
+    }
+
+    // 줄바꿈을 <br>로 변환 (HTML이 아닌 경우에만)
+    if (!containsHtml) {
+        formattedMessage = formattedMessage.replace(/\n/g, '<br>');
+    }
+
     messageDiv.innerHTML = `
-        <div class="message-content">${containsHtml ? message : escapeHtml(message)}</div>
+        <div class="message-content">${formattedMessage}</div>
         <div class="message-time">${getCurrentTime()}</div>
     `;
 
@@ -959,6 +987,39 @@ function addBotMessage(message, scroll = true, timestamp = null) {
     if (scroll) {
         scrollToBottom();
     }
+}
+
+/**
+ * 파일 내용 메시지를 카드 형식으로 포맷팅
+ */
+function formatFileContentMessage(message) {
+    // [첨부된 파일 내용] 섹션을 카드로 변환
+    message = message.replace(/\[첨부된 파일 내용\]([\s\S]*?)(?=\[📊|$)/g, function(match, content) {
+        return `
+            <div class="file-content-card">
+                <div class="file-content-header">
+                    <span class="file-content-icon">📄</span>
+                    <span class="file-content-title">첨부된 파일 내용</span>
+                </div>
+                <div class="file-content-body">${content.trim().replace(/\n/g, '<br>')}</div>
+            </div>
+        `;
+    });
+
+    // [📊 자동 데이터 분석 결과] 섹션을 카드로 변환
+    message = message.replace(/\[📊 자동 데이터 분석 결과\]([\s\S]*?)(?=$)/g, function(match, content) {
+        return `
+            <div class="analysis-card">
+                <div class="analysis-header">
+                    <span class="analysis-icon">📊</span>
+                    <span class="analysis-title">자동 데이터 분석 결과</span>
+                </div>
+                <div class="analysis-body">${content.trim().replace(/\n/g, '<br>')}</div>
+            </div>
+        `;
+    });
+
+    return message;
 }
 
 /**
@@ -1476,6 +1537,56 @@ window.onclick = function(event) {
     if (originalWindowClick) {
         originalWindowClick(event);
     }
+}
+
+// ========================================
+// 차트 렌더링
+// ========================================
+
+/**
+ * Chart.js를 사용한 차트 렌더링
+ */
+let chartCounter = 0;  // 고유 ID 생성용 카운터
+
+function renderChart(chartData) {
+    const messagesDiv = document.getElementById('chat-messages');
+    const chartContainer = document.createElement('div');
+    chartContainer.className = 'message bot';
+
+    // 고유한 ID 생성 (Date.now() + 카운터로 충돌 방지)
+    const chartId = `chart-${Date.now()}-${chartCounter++}`;
+    const wrapperId = `wrapper-${chartId}`;
+
+    // 시트 이름이 있으면 제목으로 표시
+    const chartTitle = chartData.options?.plugins?.title?.text || '';
+
+    // 최소 너비 계산 (데이터 개수에 따라)
+    const minWidth = chartData.minWidth || '100%';
+
+    chartContainer.innerHTML = `
+        <div class="chart-container">
+            ${chartTitle ? `<h4 style="margin: 0 0 10px 0; color: #333;">${chartTitle}</h4>` : ''}
+            <div class="chart-wrapper" id="${wrapperId}" style="width: ${minWidth}px;">
+                <canvas id="${chartId}"></canvas>
+            </div>
+        </div>
+        <div class="message-time">${getCurrentTime()}</div>
+    `;
+
+    messagesDiv.appendChild(chartContainer);
+    scrollToBottom();
+
+    // Chart.js로 차트 생성 (DOM 추가 후 약간의 지연)
+    setTimeout(() => {
+        const canvas = document.getElementById(chartId);
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, chartData);
+            console.log(`[차트] 차트 렌더링 완료: ${chartId}, 너비: ${minWidth}px`);
+        } else {
+            console.error(`[차트] 캔버스를 찾을 수 없음: ${chartId}`);
+        }
+    }, 10);
 }
 
 

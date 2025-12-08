@@ -9,6 +9,7 @@ from sentiment_analyzer import SentimentAnalyzer
 from file_processor import FileProcessor
 from external_apis import ExternalAPIManager, search_google
 from email_service import EmailService
+from automation_assistant import AutomationAssistant
 import os
 import json
 import uuid
@@ -573,8 +574,44 @@ def chat():
 
     # 파일 내용을 메시지에 추가
     full_message = user_message
+    automation_analysis = None
+
     if file_contents:
         full_message += "\n\n[첨부된 파일 내용]\n" + "\n\n".join(file_contents)
+
+        # 업무 자동화: 엑셀 파일이 있으면 자동 분석 수행
+        for attached_file in attached_files:
+            if 'table_data' in attached_file and attached_file.get('extension') in ['xlsx', 'csv']:
+                print(f"[자동화] 엑셀 파일 자동 분석 시작: {attached_file['filename']}")
+
+                # AutomationAssistant를 사용한 데이터 분석
+                analysis_result = AutomationAssistant.analyze_excel_data(
+                    {'table_data': attached_file['table_data']},
+                    user_message
+                )
+
+                if analysis_result.get('success'):
+                    # 분석 결과를 메시지에 추가
+                    analysis_summary = "\n\n[📊 자동 데이터 분석 결과]\n"
+
+                    if 'basic_info' in analysis_result:
+                        info = analysis_result['basic_info']
+                        analysis_summary += f"- 총 행 수: {info.get('total_rows', 0)}\n"
+                        analysis_summary += f"- 총 열 수: {info.get('total_columns', 0)}\n"
+                        analysis_summary += f"- 컬럼: {', '.join(info.get('columns', []))}\n"
+
+                    if 'statistics' in analysis_result and analysis_result['statistics']:
+                        analysis_summary += "\n[통계 정보]\n"
+                        for col_name, stats in analysis_result['statistics'].items():
+                            analysis_summary += f"\n{col_name}:\n"
+                            analysis_summary += f"  - 평균: {stats.get('average', 0):.2f}\n"
+                            analysis_summary += f"  - 합계: {stats.get('sum', 0):.2f}\n"
+                            analysis_summary += f"  - 최소: {stats.get('min', 0)}\n"
+                            analysis_summary += f"  - 최대: {stats.get('max', 0)}\n"
+
+                    full_message += analysis_summary
+                    automation_analysis = analysis_result
+                    print(f"[자동화] 분석 완료 - 통계 컬럼 수: {len(analysis_result.get('statistics', {}))}")
 
     # 사용자 메시지 저장
     message_id = db.save_message(user_id, user_message if user_message else "", is_user=True, sentiment=sentiment)
@@ -623,7 +660,77 @@ def chat():
             'api_triggered': True  # API 응답임을 표시
         })
 
-    # 2단계: GPT를 통한 응답 생성
+    # 2단계: 차트 요청 감지 및 생성 (모든 시트)
+    chart_data_list = []
+    chart_analysis_combined = ""
+    chart_type = AutomationAssistant.detect_chart_type(user_message)
+
+    # 엑셀/CSV 파일이 있으면 차트 타입이 없어도 기본 막대 차트 생성
+    has_spreadsheet = any(f.get('extension') in ['xlsx', 'csv'] for f in attached_files)
+    if not chart_type and has_spreadsheet:
+        chart_type = 'bar'  # 기본값: 막대 그래프
+        print(f"[차트] 엑셀/CSV 파일 감지 - 자동으로 {chart_type} 차트 생성")
+
+    if chart_type and attached_files:
+        # 엑셀/CSV 파일에서 차트 데이터 생성
+        for attached_file in attached_files:
+            if attached_file.get('extension') in ['xlsx', 'csv']:
+                # 엑셀 파일: 모든 시트 처리
+                if 'all_sheets' in attached_file and attached_file['all_sheets']:
+                    print(f"[차트] {len(attached_file['all_sheets'])}개 시트에 대해 {chart_type} 차트 생성")
+
+                    for sheet_data in attached_file['all_sheets']:
+                        sheet_name = sheet_data.get('sheet_name', '시트')
+                        print(f"[차트] 시트 '{sheet_name}' 차트 생성 시작")
+
+                        chart_data = AutomationAssistant.prepare_chart_data(
+                            {'table_data': sheet_data},
+                            chart_type
+                        )
+
+                        if chart_data:
+                            # 시트 이름을 차트 제목에 추가
+                            chart_data['options']['plugins']['title']['text'] = f'{sheet_name} - 데이터 시각화'
+                            chart_data['sheet_name'] = sheet_name
+                            chart_data_list.append(chart_data)
+                            print(f"[차트] 시트 '{sheet_name}' 차트 데이터 생성 완료")
+
+                            # 차트 분석 생성
+                            chart_analysis = AutomationAssistant.generate_chart_analysis(
+                                chart_data,
+                                sheet_data
+                            )
+
+                            if chart_analysis:
+                                chart_analysis_combined += f"\n\n## 시트: {sheet_name}\n" + chart_analysis
+
+                # CSV 또는 단일 시트: 기존 방식
+                elif 'table_data' in attached_file:
+                    print(f"[차트] {chart_type} 차트 생성 시작")
+                    chart_data = AutomationAssistant.prepare_chart_data(
+                        {'table_data': attached_file['table_data']},
+                        chart_type
+                    )
+                    if chart_data:
+                        chart_data_list.append(chart_data)
+                        print(f"[차트] 차트 데이터 생성 완료")
+
+                        # 차트 분석 생성
+                        chart_analysis = AutomationAssistant.generate_chart_analysis(
+                            chart_data,
+                            attached_file['table_data']
+                        )
+                        if chart_analysis:
+                            chart_analysis_combined += chart_analysis
+
+                # 분석 텍스트를 GPT 메시지에 추가
+                if chart_analysis_combined:
+                    full_message += chart_analysis_combined
+                    print(f"[차트] 차트 분석 추가 완료 - 총 {len(chart_data_list)}개 차트")
+
+                break
+
+    # 3단계: GPT를 통한 응답 생성
     if USE_GPT and openai_client:
         bot_response = generate_gpt_response(user_id, full_message, sentiment,
                                             has_image=len(image_urls) > 0,
@@ -634,14 +741,21 @@ def chat():
     # 봇 응답 저장
     db.save_message(user_id, bot_response, is_user=False, sentiment='neutral')
 
-    return jsonify({
+    response_data = {
         'response': bot_response,
         'sentiment': sentiment,
         'sentiment_info': sentiment_result,
         'files_processed': len(file_infos),
         'image_urls': image_urls,
         'attached_files': attached_files
-    })
+    }
+
+    # 차트 데이터가 있으면 추가 (여러 차트 지원)
+    if chart_data_list:
+        response_data['chart_data_list'] = chart_data_list
+        print(f"[응답] {len(chart_data_list)}개 차트 데이터 전달")
+
+    return jsonify(response_data)
 
 
 def generate_rule_based_response(message, sentiment):
@@ -733,7 +847,7 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     # 시스템 프롬프트 (감정에 따라 조절)
     tone_info = sentiment_analyzer.get_response_tone(sentiment)
     current_date = datetime.now().strftime('%Y년 %m월 %d일 %A')
-    system_prompt = f"""당신은 친절한 고객지원 챗봇입니다.
+    system_prompt = f"""당신은 친절한 고객지원 챗봇이자 지능형 업무 자동화 비서입니다.
 현재 날짜: {current_date}
 사용자의 현재 감정: {sentiment}
 응답 스타일: {tone_info['style']}
@@ -784,6 +898,64 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
    - 표 위에 간단한 인사말 추가 가능 (예: "서울의 인기 카페 5곳을 추천드립니다!")
 
 9. 추천이 아닌 일반 질문은 표 형식을 사용하지 마세요.
+
+🤖 **데이터 시각화 전문 비서 역할:**
+
+당신은 엑셀(XLSX/CSV) 데이터를 자동으로 분석하고 시각화하는 전문가입니다.
+
+10. **데이터 구조 자동 파악:**
+    - 업로드된 엑셀/CSV의 컬럼 구조를 자동으로 분석합니다
+    - 컬럼 타입 자동 인식: 날짜형(Date), 숫자형(Numeric), 카테고리형(Category), 텍스트형(Text)
+    - 각 컬럼의 특성을 파악하여 최적의 시각화 방법을 제안합니다
+
+11. **자연어 명령 해석 규칙:**
+    사용자 요청을 다음 요소로 분해하여 처리합니다:
+    - **행동(Action)**: 분석해줘, 그려줘, 시각화해줘, 비교해줘, 보여줘 등
+    - **대상(Data)**: 매출, 고객, 카테고리, 상품, 날짜, 특정 컬럼명 등
+    - **조건(Filter)**: 특정 기간, 카테고리, 매출 기준, 상위 N개 등
+    - **출력형식(Chart Type)**: 라인 차트, 막대그래프, 파이차트, 히트맵 등
+
+    예시:
+    - "카테고리별 매출 그래프 그려줘" → 카테고리 집계 → Bar Chart 추천
+    - "일자별 매출 추이 보여줘" → 날짜 그룹화 → Line Chart 추천
+    - "상위 5개 제품을 차트로 보여줘" → TOP 5 정렬 → Bar Chart 추천
+    - "전부다 시각화해" → 모든 숫자형 컬럼에 대해 적절한 차트 제안
+
+12. **차트 자동 생성 규칙:**
+    - **날짜 컬럼**이 있으면 → 시간 기반 추이 분석 (Line Chart 우선)
+    - **숫자형 컬럼**이 있으면 → 자동으로 합계, 평균, 최대/최소값 계산
+    - **카테고리형 컬럼**이 있으면 → 그룹별 집계 수행 (Bar Chart 또는 Pie Chart)
+    - **복수의 차트**를 한 번에 제안 가능 (예: 월별 추이 + 카테고리별 점유율)
+    - 사용자가 이해하기 쉬운 형태로 자동 최적화
+
+13. **차트 타입 선택 가이드:**
+    - **Line Chart**: 시간에 따른 추이, 트렌드 분석
+    - **Bar Chart**: 카테고리별 비교, 순위, TOP N
+    - **Pie Chart**: 전체 대비 비율, 구성비, 점유율
+    - **Scatter Plot**: 두 변수 간 상관관계 (향후 지원 예정)
+
+14. **모호한 요청 처리:**
+    - 요청이 명확하지 않으면 **1회만** 질문하여 구체화를 요청합니다
+    - 예: "이거 그래프로 보여줘" → "어떤 컬럼을 기준으로 차트를 만들까요? (예: 날짜별, 카테고리별, 제품별)"
+    - 가능하면 사용자의 의도를 추론하여 자동으로 처리합니다
+
+15. **출력 규칙:**
+    - **분석 요약**: 데이터의 핵심 특징을 3-5줄로 요약
+    - **차트 생성**: 시스템이 자동으로 생성한 차트가 표시됩니다
+    - **인사이트 제공**: 차트에서 발견한 패턴, 트렌드, 이상치를 설명
+    - **실행 가능한 제안**: 비즈니스 의사결정에 도움이 되는 구체적 제안
+
+    예시:
+    "매출이 3월부터 지속적으로 상승하고 있습니다. 특히 A 카테고리가 전체 매출의 40%를 차지하고 있어
+    집중 관리가 필요합니다. 6월에 소폭 하락이 있었으므로 원인 분석을 권장합니다."
+
+16. **차트 분석 및 설명:**
+    - 차트가 자동 생성되면 "[📊 차트 분석]" 섹션의 데이터를 바탕으로 설명합니다
+    - 주요 트렌드, 패턴, 이상치를 명확히 언급합니다
+    - 숫자는 구체적으로 제시합니다 (예: "평균 50만원", "최대 120만원")
+    - 사용자가 다음 액션을 취할 수 있도록 구체적 제안을 제공합니다
+
+**당신의 목표**: 사용자가 자연어로 간단히 요청해도 엑셀 데이터 분석과 차트 시각화를 자동으로 정확하게 수행하는 것입니다.
 """
 
     # 대화 이력을 메시지 형식으로 변환

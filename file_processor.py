@@ -186,37 +186,60 @@ class FileProcessor:
             print(f"[FileProcessor] XLSX 처리 시작: {filename}, 크기: {len(file_data)} bytes")
             xlsx_file = io.BytesIO(file_data)
 
-            # pandas로 Excel 읽기 (openpyxl 엔진 명시)
-            df = pd.read_excel(xlsx_file, engine='openpyxl')
-            print(f"[FileProcessor] Excel 읽기 성공: {len(df)} 행, {len(df.columns)} 열")
+            # pandas로 Excel 읽기 - 모든 시트 읽기
+            all_sheets = pd.read_excel(xlsx_file, engine='openpyxl', sheet_name=None)
+            print(f"[FileProcessor] Excel 읽기 성공: {len(all_sheets)}개 시트")
 
-            # 데이터프레임을 텍스트로 변환
-            text = df.to_string()
-            summary = f"행: {len(df)}, 열: {len(df.columns)}\n열 이름: {', '.join(df.columns.tolist())}\n\n"
+            # 모든 시트의 데이터 수집
+            all_table_data = []
+            text_parts = []
+            total_rows = 0
+            total_columns = 0
 
-            # 표 데이터 추출 (최대 20행)
-            preview_df = df.head(20)
+            for sheet_name, df in all_sheets.items():
+                print(f"[FileProcessor] 시트 '{sheet_name}': {len(df)} 행, {len(df.columns)} 열")
 
-            # NaN 값을 None으로 변환 (JSON 직렬화를 위해)
-            table_data = {
-                'headers': preview_df.columns.tolist(),
-                'rows': preview_df.fillna('').values.tolist(),  # NaN을 빈 문자열로 변환
-                'total_rows': len(df),
-                'total_columns': len(df.columns)
-            }
+                # 데이터프레임을 텍스트로 변환
+                sheet_text = f"\n[시트: {sheet_name}]\n"
+                sheet_text += f"행: {len(df)}, 열: {len(df.columns)}\n"
+                sheet_text += f"열 이름: {', '.join(df.columns.tolist())}\n\n"
+                sheet_text += df.to_string()
+                text_parts.append(sheet_text)
 
-            print(f"[FileProcessor] XLSX 처리 완료: {filename}")
+                # 표 데이터 추출 (전체 행)
+                preview_df = df
+
+                # NaN 값을 빈 문자열로 변환
+                sheet_table_data = {
+                    'sheet_name': sheet_name,
+                    'headers': preview_df.columns.tolist(),
+                    'rows': preview_df.fillna('').values.tolist(),
+                    'total_rows': len(df),
+                    'total_columns': len(df.columns)
+                }
+                all_table_data.append(sheet_table_data)
+
+                total_rows += len(df)
+                total_columns = max(total_columns, len(df.columns))
+
+            # 전체 텍스트 결합
+            text = "\n\n".join(text_parts)
+            summary = f"총 {len(all_sheets)}개 시트, 전체 행: {total_rows}\n\n"
+
+            print(f"[FileProcessor] XLSX 처리 완료: {filename}, {len(all_sheets)}개 시트")
             return {
                 'success': True,
                 'info': {
                     'type': 'xlsx',
                     'filename': filename,
-                    'rows': len(df),
-                    'columns': len(df.columns)
+                    'rows': total_rows,
+                    'columns': total_columns,
+                    'sheets': len(all_sheets)
                 },
                 'text': summary + text,
                 'has_image': False,
-                'table_data': table_data
+                'table_data': all_table_data[0] if all_table_data else None,  # 첫 번째 시트 (하위 호환성)
+                'all_sheets': all_table_data  # 모든 시트 데이터
             }
         except Exception as e:
             print(f"[FileProcessor] XLSX 처리 오류: {filename} - {str(e)}")
@@ -244,8 +267,8 @@ class FileProcessor:
             text = df.to_string()
             summary = f"행: {len(df)}, 열: {len(df.columns)}\n열 이름: {', '.join(df.columns.tolist())}\n\n"
 
-            # 표 데이터 추출 (최대 20행)
-            preview_df = df.head(20)
+            # 표 데이터 추출 (전체 행)
+            preview_df = df
             table_data = {
                 'headers': preview_df.columns.tolist(),
                 'rows': preview_df.values.tolist(),
