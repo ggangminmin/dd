@@ -18,10 +18,19 @@ from docx import Document
 import openpyxl
 
 # Pandas는 선택적 임포트 (Vercel 서버리스 크기 제한 대응)
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
+# Vercel 환경에서는 pandas를 사용하지 않고 openpyxl만 사용
+import os
+IS_VERCEL = os.environ.get('IS_VERCEL', 'false').lower() == 'true'
+
+if not IS_VERCEL:
+    try:
+        import pandas as pd
+        PANDAS_AVAILABLE = True
+    except ImportError:
+        pd = None
+        PANDAS_AVAILABLE = False
+else:
+    # Vercel에서는 pandas 사용 안 함
     pd = None
     PANDAS_AVAILABLE = False
 
@@ -176,71 +185,147 @@ class FileProcessor:
     def process_xlsx(file_data, filename):
         """XLSX 파일 처리"""
         try:
-            # Pandas 없으면 기본 처리
-            if not PANDAS_AVAILABLE:
-                return {
-                    'success': False,
-                    'error': 'XLSX 처리를 위한 pandas 패키지가 설치되지 않았습니다.'
-                }
-
             print(f"[FileProcessor] XLSX 처리 시작: {filename}, 크기: {len(file_data)} bytes")
             xlsx_file = io.BytesIO(file_data)
 
-            # pandas로 Excel 읽기 - 모든 시트 읽기
-            all_sheets = pd.read_excel(xlsx_file, engine='openpyxl', sheet_name=None)
-            print(f"[FileProcessor] Excel 읽기 성공: {len(all_sheets)}개 시트")
+            # Pandas가 사용 가능하면 pandas 사용 (빠르고 편리함)
+            if PANDAS_AVAILABLE:
+                # pandas로 Excel 읽기 - 모든 시트 읽기
+                all_sheets = pd.read_excel(xlsx_file, engine='openpyxl', sheet_name=None)
+                print(f"[FileProcessor] Excel 읽기 성공 (pandas): {len(all_sheets)}개 시트")
 
-            # 모든 시트의 데이터 수집
-            all_table_data = []
-            text_parts = []
-            total_rows = 0
-            total_columns = 0
+                # 모든 시트의 데이터 수집
+                all_table_data = []
+                text_parts = []
+                total_rows = 0
+                total_columns = 0
 
-            for sheet_name, df in all_sheets.items():
-                print(f"[FileProcessor] 시트 '{sheet_name}': {len(df)} 행, {len(df.columns)} 열")
+                for sheet_name, df in all_sheets.items():
+                    print(f"[FileProcessor] 시트 '{sheet_name}': {len(df)} 행, {len(df.columns)} 열")
 
-                # 데이터프레임을 텍스트로 변환
-                sheet_text = f"\n[시트: {sheet_name}]\n"
-                sheet_text += f"행: {len(df)}, 열: {len(df.columns)}\n"
-                sheet_text += f"열 이름: {', '.join(df.columns.tolist())}\n\n"
-                sheet_text += df.to_string()
-                text_parts.append(sheet_text)
+                    # 데이터프레임을 텍스트로 변환
+                    sheet_text = f"\n[시트: {sheet_name}]\n"
+                    sheet_text += f"행: {len(df)}, 열: {len(df.columns)}\n"
+                    sheet_text += f"열 이름: {', '.join(df.columns.tolist())}\n\n"
+                    sheet_text += df.to_string()
+                    text_parts.append(sheet_text)
 
-                # 표 데이터 추출 (전체 행)
-                preview_df = df
+                    # 표 데이터 추출 (전체 행)
+                    preview_df = df
 
-                # NaN 값을 빈 문자열로 변환
-                sheet_table_data = {
-                    'sheet_name': sheet_name,
-                    'headers': preview_df.columns.tolist(),
-                    'rows': preview_df.fillna('').values.tolist(),
-                    'total_rows': len(df),
-                    'total_columns': len(df.columns)
+                    # NaN 값을 빈 문자열로 변환
+                    sheet_table_data = {
+                        'sheet_name': sheet_name,
+                        'headers': preview_df.columns.tolist(),
+                        'rows': preview_df.fillna('').values.tolist(),
+                        'total_rows': len(df),
+                        'total_columns': len(df.columns)
+                    }
+                    all_table_data.append(sheet_table_data)
+
+                    total_rows += len(df)
+                    total_columns = max(total_columns, len(df.columns))
+
+                # 전체 텍스트 결합
+                text = "\n\n".join(text_parts)
+                summary = f"총 {len(all_sheets)}개 시트, 전체 행: {total_rows}\n\n"
+
+                print(f"[FileProcessor] XLSX 처리 완료 (pandas): {filename}, {len(all_sheets)}개 시트")
+                return {
+                    'success': True,
+                    'info': {
+                        'type': 'xlsx',
+                        'filename': filename,
+                        'rows': total_rows,
+                        'columns': total_columns,
+                        'sheets': len(all_sheets)
+                    },
+                    'text': summary + text,
+                    'has_image': False,
+                    'table_data': all_table_data[0] if all_table_data else None,
+                    'all_sheets': all_table_data
                 }
-                all_table_data.append(sheet_table_data)
 
-                total_rows += len(df)
-                total_columns = max(total_columns, len(df.columns))
+            else:
+                # Pandas 없으면 openpyxl만 사용 (Vercel 환경)
+                print(f"[FileProcessor] openpyxl만 사용하여 처리 (pandas 없음)")
+                wb = openpyxl.load_workbook(xlsx_file, data_only=True)
 
-            # 전체 텍스트 결합
-            text = "\n\n".join(text_parts)
-            summary = f"총 {len(all_sheets)}개 시트, 전체 행: {total_rows}\n\n"
+                all_table_data = []
+                text_parts = []
+                total_rows = 0
+                total_columns = 0
 
-            print(f"[FileProcessor] XLSX 처리 완료: {filename}, {len(all_sheets)}개 시트")
-            return {
-                'success': True,
-                'info': {
-                    'type': 'xlsx',
-                    'filename': filename,
-                    'rows': total_rows,
-                    'columns': total_columns,
-                    'sheets': len(all_sheets)
-                },
-                'text': summary + text,
-                'has_image': False,
-                'table_data': all_table_data[0] if all_table_data else None,  # 첫 번째 시트 (하위 호환성)
-                'all_sheets': all_table_data  # 모든 시트 데이터
-            }
+                for sheet_name in wb.sheetnames:
+                    ws = wb[sheet_name]
+
+                    # 헤더와 데이터 읽기
+                    rows_data = []
+                    headers = []
+
+                    for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
+                        if row_idx == 1:
+                            # 첫 번째 행을 헤더로 사용
+                            headers = [str(cell) if cell is not None else f'Column{i+1}' for i, cell in enumerate(row)]
+                        else:
+                            # 데이터 행
+                            row_data = [cell if cell is not None else '' for cell in row]
+                            rows_data.append(row_data)
+
+                    if not headers:
+                        continue
+
+                    num_rows = len(rows_data)
+                    num_cols = len(headers)
+
+                    print(f"[FileProcessor] 시트 '{sheet_name}': {num_rows} 행, {num_cols} 열")
+
+                    # 텍스트 변환
+                    sheet_text = f"\n[시트: {sheet_name}]\n"
+                    sheet_text += f"행: {num_rows}, 열: {num_cols}\n"
+                    sheet_text += f"열 이름: {', '.join(headers)}\n\n"
+
+                    # 표 형식으로 데이터 추가 (최대 100행만)
+                    for i, row in enumerate(rows_data[:100]):
+                        sheet_text += f"  {', '.join(str(cell) for cell in row)}\n"
+                    if num_rows > 100:
+                        sheet_text += f"  ... ({num_rows - 100}개 행 더 있음)\n"
+
+                    text_parts.append(sheet_text)
+
+                    # 표 데이터 저장
+                    sheet_table_data = {
+                        'sheet_name': sheet_name,
+                        'headers': headers,
+                        'rows': rows_data,
+                        'total_rows': num_rows,
+                        'total_columns': num_cols
+                    }
+                    all_table_data.append(sheet_table_data)
+
+                    total_rows += num_rows
+                    total_columns = max(total_columns, num_cols)
+
+                # 전체 텍스트 결합
+                text = "\n\n".join(text_parts)
+                summary = f"총 {len(wb.sheetnames)}개 시트, 전체 행: {total_rows}\n\n"
+
+                print(f"[FileProcessor] XLSX 처리 완료 (openpyxl): {filename}, {len(wb.sheetnames)}개 시트")
+                return {
+                    'success': True,
+                    'info': {
+                        'type': 'xlsx',
+                        'filename': filename,
+                        'rows': total_rows,
+                        'columns': total_columns,
+                        'sheets': len(wb.sheetnames)
+                    },
+                    'text': summary + text,
+                    'has_image': False,
+                    'table_data': all_table_data[0] if all_table_data else None,
+                    'all_sheets': all_table_data
+                }
+
         except Exception as e:
             print(f"[FileProcessor] XLSX 처리 오류: {filename} - {str(e)}")
             import traceback
@@ -254,40 +339,81 @@ class FileProcessor:
     def process_csv(file_data, filename):
         """CSV 파일 처리"""
         try:
-            # Pandas 없으면 기본 처리
-            if not PANDAS_AVAILABLE:
-                return {
-                    'success': False,
-                    'error': 'CSV 처리를 위한 pandas 패키지가 설치되지 않았습니다.'
+            if PANDAS_AVAILABLE:
+                # pandas 사용
+                csv_file = io.BytesIO(file_data)
+                df = pd.read_csv(csv_file)
+
+                text = df.to_string()
+                summary = f"행: {len(df)}, 열: {len(df.columns)}\n열 이름: {', '.join(df.columns.tolist())}\n\n"
+
+                # 표 데이터 추출 (전체 행)
+                preview_df = df
+                table_data = {
+                    'headers': preview_df.columns.tolist(),
+                    'rows': preview_df.values.tolist(),
+                    'total_rows': len(df),
+                    'total_columns': len(df.columns)
                 }
 
-            csv_file = io.BytesIO(file_data)
-            df = pd.read_csv(csv_file)
+                return {
+                    'success': True,
+                    'info': {
+                        'type': 'csv',
+                        'filename': filename,
+                        'rows': len(df),
+                        'columns': len(df.columns)
+                    },
+                    'text': summary + text,
+                    'has_image': False,
+                    'table_data': table_data
+                }
+            else:
+                # pandas 없이 csv 모듈 사용
+                import csv
+                text_data = file_data.decode('utf-8')
+                csv_reader = csv.reader(io.StringIO(text_data))
 
-            text = df.to_string()
-            summary = f"행: {len(df)}, 열: {len(df.columns)}\n열 이름: {', '.join(df.columns.tolist())}\n\n"
+                rows = list(csv_reader)
+                if not rows:
+                    return {
+                        'success': False,
+                        'error': 'CSV 파일이 비어있습니다.'
+                    }
 
-            # 표 데이터 추출 (전체 행)
-            preview_df = df
-            table_data = {
-                'headers': preview_df.columns.tolist(),
-                'rows': preview_df.values.tolist(),
-                'total_rows': len(df),
-                'total_columns': len(df.columns)
-            }
+                headers = rows[0]
+                data_rows = rows[1:]
 
-            return {
-                'success': True,
-                'info': {
-                    'type': 'csv',
-                    'filename': filename,
-                    'rows': len(df),
-                    'columns': len(df.columns)
-                },
-                'text': summary + text,
-                'has_image': False,
-                'table_data': table_data
-            }
+                # 텍스트 변환
+                text = f"행: {len(data_rows)}, 열: {len(headers)}\n"
+                text += f"열 이름: {', '.join(headers)}\n\n"
+
+                # 데이터 추가 (최대 100행)
+                for i, row in enumerate(data_rows[:100]):
+                    text += f"  {', '.join(str(cell) for cell in row)}\n"
+                if len(data_rows) > 100:
+                    text += f"  ... ({len(data_rows) - 100}개 행 더 있음)\n"
+
+                table_data = {
+                    'headers': headers,
+                    'rows': data_rows,
+                    'total_rows': len(data_rows),
+                    'total_columns': len(headers)
+                }
+
+                return {
+                    'success': True,
+                    'info': {
+                        'type': 'csv',
+                        'filename': filename,
+                        'rows': len(data_rows),
+                        'columns': len(headers)
+                    },
+                    'text': text,
+                    'has_image': False,
+                    'table_data': table_data
+                }
+
         except Exception as e:
             return {
                 'success': False,
