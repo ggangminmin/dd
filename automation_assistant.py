@@ -495,12 +495,12 @@ class AutomationAssistant:
     @staticmethod
     def generate_chart_analysis(chart_data: Dict[str, Any], table_data: Dict[str, Any]) -> str:
         """
-        차트 데이터를 분석하여 간결한 설명 생성 (표 형식)
+        차트 데이터를 분석하여 간결한 설명 생성 (HTML 표 형식)
         Args:
             chart_data: Chart.js 차트 데이터
             table_data: 원본 테이블 데이터
         Returns:
-            분석 설명 텍스트 (간결한 표 형식)
+            분석 설명 텍스트 (HTML 표 형식)
         """
         if not chart_data or not table_data:
             return ""
@@ -513,8 +513,8 @@ class AutomationAssistant:
         if not datasets:
             return ""
 
-        # 간결한 분석 시작
-        analysis = "\n\n"
+        # HTML 표 형식으로 분석 결과 생성
+        analysis = "\n\n<div class='data-analysis-table'>\n"
 
         # 각 데이터셋을 표 형식으로 분석 (최대 3개만)
         for idx, dataset in enumerate(datasets[:3]):
@@ -531,13 +531,17 @@ class AutomationAssistant:
             max_idx = values.index(max_val) if max_val in values else 0
             min_idx = values.index(min_val) if min_val in values else 0
 
-            # 표 형식으로 간결하게 표시
-            analysis += f"**{label}**\n"
-            analysis += f"```\n"
-            analysis += f"합계   : {total:>12,.0f}\n"
-            analysis += f"평균   : {avg:>12,.1f}\n"
-            analysis += f"최대   : {max_val:>12,.0f}  ({labels[max_idx] if max_idx < len(labels) else ''})\n"
-            analysis += f"최소   : {min_val:>12,.0f}  ({labels[min_idx] if min_idx < len(labels) else ''})\n"
+            # HTML 표로 간결하게 표시
+            analysis += f"<h4>{label}</h4>\n"
+            analysis += "<table>\n"
+            analysis += "  <thead>\n"
+            analysis += "    <tr><th>항목</th><th>값</th><th>세부사항</th></tr>\n"
+            analysis += "  </thead>\n"
+            analysis += "  <tbody>\n"
+            analysis += f"    <tr><td>합계</td><td>{total:,.0f}</td><td>-</td></tr>\n"
+            analysis += f"    <tr><td>평균</td><td>{avg:,.1f}</td><td>-</td></tr>\n"
+            analysis += f"    <tr><td>최대</td><td>{max_val:,.0f}</td><td>{labels[max_idx] if max_idx < len(labels) else ''}</td></tr>\n"
+            analysis += f"    <tr><td>최소</td><td>{min_val:,.0f}</td><td>{labels[min_idx] if min_idx < len(labels) else ''}</td></tr>\n"
 
             # 추세 분석 (선 그래프만)
             if chart_type == 'line' and len(values) > 1:
@@ -545,13 +549,19 @@ class AutomationAssistant:
                 decreases = sum(1 for i in range(1, len(values)) if values[i] < values[i-1])
 
                 if increases > decreases:
-                    trend = f"↗ 상승 ({increases}회)"
+                    trend = f"↗ 상승"
+                    trend_detail = f"{increases}회 증가"
                 elif decreases > increases:
-                    trend = f"↘ 하락 ({decreases}회)"
+                    trend = f"↘ 하락"
+                    trend_detail = f"{decreases}회 감소"
                 else:
                     trend = "→ 보합"
-                analysis += f"추세   : {trend:>20}\n"
+                    trend_detail = "변동 없음"
+                analysis += f"    <tr><td>추세</td><td>{trend}</td><td>{trend_detail}</td></tr>\n"
 
-            analysis += f"```\n\n"
+            analysis += "  </tbody>\n"
+            analysis += "</table>\n\n"
+
+        analysis += "</div>\n"
 
         return analysis
