@@ -2156,10 +2156,23 @@ body[data-theme="dark"] .analysis-body {
     height: 450px !important;
 }
 
+/* 차트 제목 */
+.chart-container h4 {
+    margin: 0 0 10px 0;
+    color: #333;
+    font-size: 16px;
+    font-weight: 600;
+}
+
 /* 다크모드: 차트 컨테이너 */
 body[data-theme="dark"] .chart-container {
     background: #1e293b;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* 다크모드: 차트 제목 */
+body[data-theme="dark"] .chart-container h4 {
+    color: #e0e7ff;
 }
 
 /* 데이터 분석 표 스타일 */
@@ -2315,5 +2328,102 @@ body[data-theme="dark"] .message-content h4 {
 
 body[data-theme="dark"] .message-content p strong {
     color: #a5b4fc;
+}
+
+/* 메시지 내 리스트 스타일 (HTML 태그용) */
+.message-content ul {
+    margin: 12px 0 12px 20px;
+    padding-left: 20px;
+    line-height: 1.8;
+    list-style-type: disc;
+}
+
+.message-content ol {
+    margin: 12px 0 12px 20px;
+    padding-left: 20px;
+    line-height: 1.8;
+    list-style-type: decimal;
+}
+
+.message-content ul li,
+.message-content ol li {
+    margin: 8px 0;
+    color: #374151;
+}
+
+.message-content ul li strong,
+.message-content ol li strong {
+    color: #667eea;
+    font-weight: 600;
+}
+
+/* 다크모드: 리스트 */
+body[data-theme="dark"] .message-content ul li,
+body[data-theme="dark"] .message-content ol li {
+    color: #cbd5e1;
+}
+
+body[data-theme="dark"] .message-content ul li strong,
+body[data-theme="dark"] .message-content ol li strong {
+    color: #a5b4fc;
+}
+
+/* 영향도 아이콘 스타일 */
+.severity-high::before {
+    content: "⚠";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    text-align: center;
+    border-radius: 3px;
+    font-weight: bold;
+    margin-right: 6px;
+    background: #ef4444;
+    color: white;
+    font-size: 14px;
+}
+
+.severity-medium::before {
+    content: "⚠";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    text-align: center;
+    border-radius: 3px;
+    font-weight: bold;
+    margin-right: 6px;
+    background: #f59e0b;
+    color: white;
+    font-size: 14px;
+}
+
+.severity-low::before {
+    content: "⚠";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    text-align: center;
+    border-radius: 3px;
+    font-weight: bold;
+    margin-right: 6px;
+    background: #10b981;
+    color: white;
+    font-size: 14px;
+}
+
+/* 다크모드에서도 동일한 색상 유지 */
+body[data-theme="dark"] .severity-high::before {
+    background: #ef4444;
+}
+
+body[data-theme="dark"] .severity-medium::before {
+    background: #f59e0b;
+}
+
+body[data-theme="dark"] .severity-low::before {
+    background: #10b981;
 }
 

@@ -28,7 +28,9 @@
       "Bash(git reset:*)",
       "Bash(echo:*)",
       "Bash(if exist nul del /Q nul)",
-      "Bash(del \"c:\\Users\\AIWEB\\OneDrive - 지피티코리아\\문서\\GitHub\\dd\\test_search.py\")"
+      "Bash(del \"c:\\Users\\AIWEB\\OneDrive - 지피티코리아\\문서\\GitHub\\dd\\test_search.py\")",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

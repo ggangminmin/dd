@@ -660,68 +660,131 @@ def chat():
             'api_triggered': True  # API 응답임을 표시
         })
 
-    # 2단계: 차트 요청 감지 및 생성 (모든 시트)
+    # 2단계: 차트 요청 감지 및 생성 (모든 시트, 여러 차트 타입)
     chart_data_list = []
     chart_analysis_combined = ""
-    chart_type = AutomationAssistant.detect_chart_type(user_message)
+    chart_types = AutomationAssistant.detect_chart_types(user_message)
+
+    # 파일이 없으면 이전 대화에서 마지막 엑셀/CSV 파일 가져오기
+    if not attached_files and chart_types:
+        print(f"[차트] 새 파일이 없음 - 이전 대화에서 마지막 엑셀/CSV 파일 검색 중...")
+        recent_history = db.get_user_history(user_id, limit=10)
+
+        for msg in reversed(recent_history):  # 최신부터 역순 검색
+            if msg.get('attachments'):
+                for att in msg['attachments']:
+                    parsed_info = att.get('parsed_info', {})
+                    file_ext = parsed_info.get('extension', parsed_info.get('type', ''))
+
+                    if file_ext in ['xlsx', 'csv']:
+                        # 이전 파일 정보를 attached_files에 추가
+                        file_info_dict = {
+                            'filename': att['filename'],
+                            'extension': file_ext,
+                            'size': parsed_info.get('size', att.get('file_size', 0)),
+                        }
+
+                        # table_data가 있으면 추가
+                        if 'table_data' in parsed_info:
+                            file_info_dict['table_data'] = parsed_info['table_data']
+
+                        # all_sheets가 있으면 추가
+                        if 'all_sheets' in parsed_info:
+                            file_info_dict['all_sheets'] = parsed_info['all_sheets']
+
+                        attached_files.append(file_info_dict)
+                        print(f"[차트] 이전 파일 발견: {att['filename']} (확장자: {file_ext})")
+                        break
+
+            if attached_files:  # 파일을 찾았으면 중단
+                break
 
     # 엑셀/CSV 파일이 있으면 차트 타입이 없어도 기본 막대 차트 생성
     has_spreadsheet = any(f.get('extension') in ['xlsx', 'csv'] for f in attached_files)
-    if not chart_type and has_spreadsheet:
-        chart_type = 'bar'  # 기본값: 막대 그래프
-        print(f"[차트] 엑셀/CSV 파일 감지 - 자동으로 {chart_type} 차트 생성")
+    if not chart_types and has_spreadsheet:
+        chart_types = ['bar']  # 기본값: 막대 그래프
+        print(f"[차트] 엑셀/CSV 파일 감지 - 자동으로 {chart_types[0]} 차트 생성")
 
-    if chart_type and attached_files:
-        # 엑셀/CSV 파일에서 차트 데이터 생성
+    if chart_types and attached_files:
+        # 사용자 메시지에서 칼럼명 추출
+        x_column = None
+        y_columns = None
+
+        # 첫 번째 파일의 헤더를 사용하여 칼럼명 추출
         for attached_file in attached_files:
             if attached_file.get('extension') in ['xlsx', 'csv']:
-                # 엑셀 파일: 모든 시트 처리
+                headers = []
                 if 'all_sheets' in attached_file and attached_file['all_sheets']:
-                    print(f"[차트] {len(attached_file['all_sheets'])}개 시트에 대해 {chart_type} 차트 생성")
+                    headers = attached_file['all_sheets'][0].get('headers', [])
+                elif 'table_data' in attached_file:
+                    headers = attached_file['table_data'].get('headers', [])
 
-                    for sheet_data in attached_file['all_sheets']:
-                        sheet_name = sheet_data.get('sheet_name', '시트')
-                        print(f"[차트] 시트 '{sheet_name}' 차트 생성 시작")
+                if headers:
+                    x_column, y_columns = AutomationAssistant.extract_column_names(user_message, headers)
+                    if x_column or y_columns:
+                        print(f"[차트] 칼럼 추출: X축={x_column}, Y축={y_columns}")
+                    break
 
+        # 엑셀/CSV 파일에서 차트 데이터 생성 (여러 타입)
+        for attached_file in attached_files:
+            if attached_file.get('extension') in ['xlsx', 'csv']:
+                # 각 차트 타입에 대해 차트 생성
+                for chart_type in chart_types:
+                    # 엑셀 파일: 모든 시트 처리
+                    if 'all_sheets' in attached_file and attached_file['all_sheets']:
+                        print(f"[차트] {len(attached_file['all_sheets'])}개 시트에 대해 {chart_type} 차트 생성")
+
+                        for sheet_data in attached_file['all_sheets']:
+                            sheet_name = sheet_data.get('sheet_name', '시트')
+                            print(f"[차트] 시트 '{sheet_name}' {chart_type} 차트 생성 시작")
+
+                            chart_data = AutomationAssistant.prepare_chart_data(
+                                {'table_data': sheet_data},
+                                chart_type,
+                                x_column,
+                                y_columns
+                            )
+
+                            if chart_data:
+                                # 시트 이름과 차트 타입을 제목에 추가
+                                chart_type_name = {'bar': '막대', 'line': '선', 'pie': '원'}[chart_type]
+                                chart_data['options']['plugins']['title']['text'] = f'{sheet_name} - {chart_type_name} 차트'
+                                chart_data['sheet_name'] = sheet_name
+                                chart_data_list.append(chart_data)
+                                print(f"[차트] 시트 '{sheet_name}' {chart_type} 차트 데이터 생성 완료")
+
+                                # 차트 분석 생성
+                                chart_analysis = AutomationAssistant.generate_chart_analysis(
+                                    chart_data,
+                                    sheet_data
+                                )
+
+                                if chart_analysis:
+                                    chart_analysis_combined += f"\n\n## 시트: {sheet_name} ({chart_type_name} 차트)\n" + chart_analysis
+
+                    # CSV 또는 단일 시트: 기존 방식
+                    elif 'table_data' in attached_file:
+                        print(f"[차트] {chart_type} 차트 생성 시작")
                         chart_data = AutomationAssistant.prepare_chart_data(
-                            {'table_data': sheet_data},
-                            chart_type
+                            {'table_data': attached_file['table_data']},
+                            chart_type,
+                            x_column,
+                            y_columns
                         )
-
                         if chart_data:
-                            # 시트 이름을 차트 제목에 추가
-                            chart_data['options']['plugins']['title']['text'] = f'{sheet_name} - 데이터 시각화'
-                            chart_data['sheet_name'] = sheet_name
+                            # 차트 타입을 제목에 추가
+                            chart_type_name = {'bar': '막대', 'line': '선', 'pie': '원'}[chart_type]
+                            chart_data['options']['plugins']['title']['text'] = f'데이터 시각화 - {chart_type_name} 차트'
                             chart_data_list.append(chart_data)
-                            print(f"[차트] 시트 '{sheet_name}' 차트 데이터 생성 완료")
+                            print(f"[차트] {chart_type} 차트 데이터 생성 완료")
 
                             # 차트 분석 생성
                             chart_analysis = AutomationAssistant.generate_chart_analysis(
                                 chart_data,
-                                sheet_data
+                                attached_file['table_data']
                             )
-
                             if chart_analysis:
-                                chart_analysis_combined += f"\n\n## 시트: {sheet_name}\n" + chart_analysis
-
-                # CSV 또는 단일 시트: 기존 방식
-                elif 'table_data' in attached_file:
-                    print(f"[차트] {chart_type} 차트 생성 시작")
-                    chart_data = AutomationAssistant.prepare_chart_data(
-                        {'table_data': attached_file['table_data']},
-                        chart_type
-                    )
-                    if chart_data:
-                        chart_data_list.append(chart_data)
-                        print(f"[차트] 차트 데이터 생성 완료")
-
-                        # 차트 분석 생성
-                        chart_analysis = AutomationAssistant.generate_chart_analysis(
-                            chart_data,
-                            attached_file['table_data']
-                        )
-                        if chart_analysis:
-                            chart_analysis_combined += chart_analysis
+                                chart_analysis_combined += f"\n\n## {chart_type_name} 차트 분석\n" + chart_analysis
 
                 # 분석 텍스트를 GPT 메시지에 추가
                 if chart_analysis_combined:
@@ -847,7 +910,12 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     # 시스템 프롬프트 (감정에 따라 조절)
     tone_info = sentiment_analyzer.get_response_tone(sentiment)
     current_date = datetime.now().strftime('%Y년 %m월 %d일 %A')
-    system_prompt = f"""당신은 친절한 고객지원 챗봇이자 지능형 업무 자동화 비서입니다.
+    system_prompt = f"""🚨🚨🚨 최우선 규칙 🚨🚨🚨
+절대 마크다운 사용 금지! 오직 HTML만 사용하세요!
+금지: -, *, **, ##, ###, 1., 2., >, [ ], ( )
+허용: <h3>, <h4>, <p>, <strong>, <ul>, <ol>, <table>
+
+당신은 친절한 고객지원 챗봇이자 지능형 업무 자동화 비서입니다.
 현재 날짜: {current_date}
 사용자의 현재 감정: {sentiment}
 응답 스타일: {tone_info['style']}
@@ -862,9 +930,9 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 5. 첨부된 파일이 있다면 그 내용을 분석하여 답변하세요.
 6. 날짜를 물어보면 위에 명시된 현재 날짜를 사용하세요.
 
-📋 **맛집, 카페, 장소 추천 시 표 형식 사용 (필수!):**
+📋 맛집, 카페, 장소 추천 시 표 형식 사용 (필수):
 
-7. 맛집, 카페, 관광지 등 추천 요청 시 **반드시 아래 HTML 표 형식**을 사용하세요:
+7. 맛집, 카페, 관광지 등 추천 요청 시 반드시 아래 HTML 표 형식을 사용하세요:
 
 <div class="search-table-wrapper">
     <h3 class="search-title">✨ 추천 장소</h3>
@@ -891,7 +959,7 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     </table>
 </div>
 
-8. **표 작성 규칙:**
+8. 표 작성 규칙:
    - 이름: 간결하고 정확한 장소명만 (예: "테라로사 커피"), 링크는 절대 포함하지 마세요
    - 설명: 위치(동/구), 특징, 대표 메뉴, 분위기 등을 간단하게 요약
    - 2024년 10월까지의 지식을 바탕으로 유명하고 검증된 장소를 추천
@@ -899,21 +967,21 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 
 9. 추천이 아닌 일반 질문은 표 형식을 사용하지 마세요.
 
-🤖 **데이터 시각화 전문 비서 역할:**
+🤖 데이터 시각화 전문 비서 역할:
 
 당신은 엑셀(XLSX/CSV) 데이터를 자동으로 분석하고 시각화하는 전문가입니다.
 
-10. **데이터 구조 자동 파악:**
+10. 데이터 구조 자동 파악:
     - 업로드된 엑셀/CSV의 컬럼 구조를 자동으로 분석합니다
     - 컬럼 타입 자동 인식: 날짜형(Date), 숫자형(Numeric), 카테고리형(Category), 텍스트형(Text)
     - 각 컬럼의 특성을 파악하여 최적의 시각화 방법을 제안합니다
 
-11. **자연어 명령 해석 규칙:**
+11. 자연어 명령 해석 규칙:
     사용자 요청을 다음 요소로 분해하여 처리합니다:
-    - **행동(Action)**: 분석해줘, 그려줘, 시각화해줘, 비교해줘, 보여줘 등
-    - **대상(Data)**: 매출, 고객, 카테고리, 상품, 날짜, 특정 컬럼명 등
-    - **조건(Filter)**: 특정 기간, 카테고리, 매출 기준, 상위 N개 등
-    - **출력형식(Chart Type)**: 라인 차트, 막대그래프, 파이차트, 히트맵 등
+    - 행동(Action): 분석해줘, 그려줘, 시각화해줘, 비교해줘, 보여줘 등
+    - 대상(Data): 매출, 고객, 카테고리, 상품, 날짜, 특정 컬럼명 등
+    - 조건(Filter): 특정 기간, 카테고리, 매출 기준, 상위 N개 등
+    - 출력형식(Chart Type): 라인 차트, 막대그래프, 파이차트, 히트맵 등
 
     예시:
     - "카테고리별 매출 그래프 그려줘" → 카테고리 집계 → Bar Chart 추천
@@ -921,43 +989,48 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     - "상위 5개 제품을 차트로 보여줘" → TOP 5 정렬 → Bar Chart 추천
     - "전부다 시각화해" → 모든 숫자형 컬럼에 대해 적절한 차트 제안
 
-12. **차트 자동 생성 규칙:**
-    - **날짜 컬럼**이 있으면 → 시간 기반 추이 분석 (Line Chart 우선)
-    - **숫자형 컬럼**이 있으면 → 자동으로 합계, 평균, 최대/최소값 계산
-    - **카테고리형 컬럼**이 있으면 → 그룹별 집계 수행 (Bar Chart 또는 Pie Chart)
-    - **복수의 차트**를 한 번에 제안 가능 (예: 월별 추이 + 카테고리별 점유율)
+12. 차트 자동 생성 규칙:
+    - 날짜 컬럼이 있으면 → 시간 기반 추이 분석 (Line Chart 우선)
+    - 숫자형 컬럼이 있으면 → 자동으로 합계, 평균, 최대/최소값 계산
+    - 카테고리형 컬럼이 있으면 → 그룹별 집계 수행 (Bar Chart 또는 Pie Chart)
+    - 복수의 차트를 한 번에 제안 가능 (예: 월별 추이 + 카테고리별 점유율)
     - 사용자가 이해하기 쉬운 형태로 자동 최적화
 
-13. **차트 타입 선택 가이드:**
-    - **Line Chart**: 시간에 따른 추이, 트렌드 분석
-    - **Bar Chart**: 카테고리별 비교, 순위, TOP N
-    - **Pie Chart**: 전체 대비 비율, 구성비, 점유율
-    - **Scatter Plot**: 두 변수 간 상관관계 (향후 지원 예정)
+    ⚠️ 중요: 차트 생성 규칙
+    - 새 파일을 업로드하면 그 파일로 차트 생성
+    - 파일 없이 차트를 요청하면 이전 대화에서 마지막 엑셀/CSV 파일을 자동으로 재사용
+    - 여러 차트를 원하면 "막대 그래프와 선 그래프로 보여줘"처럼 한 번에 요청 가능
 
-14. **모호한 요청 처리:**
-    - 요청이 명확하지 않으면 **1회만** 질문하여 구체화를 요청합니다
+13. 차트 타입 선택 가이드:
+    - Line Chart: 시간에 따른 추이, 트렌드 분석
+    - Bar Chart: 카테고리별 비교, 순위, TOP N
+    - Pie Chart: 전체 대비 비율, 구성비, 점유율
+    - Scatter Plot: 두 변수 간 상관관계 (향후 지원 예정)
+
+14. 모호한 요청 처리:
+    - 요청이 명확하지 않으면 1회만 질문하여 구체화를 요청합니다
     - 예: "이거 그래프로 보여줘" → "어떤 컬럼을 기준으로 차트를 만들까요? (예: 날짜별, 카테고리별, 제품별)"
     - 가능하면 사용자의 의도를 추론하여 자동으로 처리합니다
 
-15. **출력 규칙:**
-    - **분석 요약**: 데이터의 핵심 특징을 3-5줄로 요약
-    - **차트 생성**: 시스템이 자동으로 생성한 차트가 표시됩니다
-    - **인사이트 제공**: 차트에서 발견한 패턴, 트렌드, 이상치를 설명
-    - **실행 가능한 제안**: 비즈니스 의사결정에 도움이 되는 구체적 제안
+15. 출력 규칙 (마크다운 절대 금지):
+    - 분석 요약: 데이터의 핵심 특징을 3-5줄로 요약
+    - 차트 생성: 시스템이 자동으로 생성한 차트가 표시됩니다
+    - 인사이트 제공: 차트에서 발견한 패턴, 트렌드, 이상치를 설명
+    - 실행 가능한 제안: 비즈니스 의사결정에 도움이 되는 구체적 제안
 
     예시:
     "매출이 3월부터 지속적으로 상승하고 있습니다. 특히 A 카테고리가 전체 매출의 40%를 차지하고 있어
     집중 관리가 필요합니다. 6월에 소폭 하락이 있었으므로 원인 분석을 권장합니다."
 
-16. **차트 분석 및 설명:**
+16. 차트 분석 및 설명 (마크다운 절대 금지):
     - 차트가 자동 생성되면 "[📊 차트 분석]" 섹션의 데이터를 바탕으로 설명합니다
     - 주요 트렌드, 패턴, 이상치를 명확히 언급합니다
     - 숫자는 구체적으로 제시합니다 (예: "평균 50만원", "최대 120만원")
     - 사용자가 다음 액션을 취할 수 있도록 구체적 제안을 제공합니다
 
-📊 **데이터 분석 결과 표시 형식 (필수!):**
+📊 데이터 분석 결과 표시 형식 (필수):
 
-17. **Excel/CSV 데이터 분석 결과는 반드시 HTML 표 형식으로 출력하세요:**
+17. Excel/CSV 데이터 분석 결과는 반드시 HTML 표 형식으로 출력하세요:
 
 <div class='data-analysis-table'>
 <h4>분석 제목</h4>
@@ -974,20 +1047,21 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 </table>
 </div>
 
-18. **응답 형식 규칙 (매우 중요!):**
+18. 응답 형식 규칙 (매우 중요 - 마크다운 절대 금지):
 
-   ⚠️ **절대 금지사항:**
-   - 마크다운 문법 사용 금지: ###, ##, -, *, **, 1., 2. 등
+   ⚠️ 절대 금지사항 (다시 한번 강조):
+   - 마크다운 문법 사용 금지: ###, ##, -, *, **, 1., 2., >, [ ], ( ) 등 모든 마크다운
    - 긴 텍스트 나열 금지
    - 불필요한 설명 금지
 
-   ✅ **필수 사용 형식:**
-   - 모든 내용은 HTML 표 형식으로만 작성
-   - 제목: <h3>, <h4> 태그
+   ✅ 필수 사용 형식:
+   - 모든 내용은 HTML 태그로만 작성
+   - 제목: <h3>, <h4> 태그만 사용
    - 짧은 설명: <p> 태그 (1-2문장만)
-   - 리스트: <ul>, <ol> 태그
+   - 리스트: <ul>, <ol> 태그만 사용
+   - 강조: <strong> 태그만 사용
 
-19. **데이터 분석 응답 템플릿 (반드시 따르세요):**
+19. 데이터 분석 응답 템플릿 (반드시 따르세요):
 
 <h3>📊 데이터 분석 결과</h3>
 
@@ -1011,21 +1085,37 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     <tr><th>문제점</th><th>영향도</th><th>권장 조치</th></tr>
   </thead>
   <tbody>
-    <tr><td>가격 편차 큼</td><td>⚠️ 높음</td><td>가격 정책 표준화</td></tr>
-    <tr><td>매출 불균형</td><td>⚠️ 중간</td><td>지역별 전략 수립</td></tr>
+    <tr><td>가격 편차 큼</td><td><span class="severity-high">높음</span></td><td>가격 정책 표준화</td></tr>
+    <tr><td>매출 불균형</td><td><span class="severity-medium">중간</span></td><td>지역별 전략 수립</td></tr>
+    <tr><td>경미한 문제</td><td><span class="severity-low">낮음</span></td><td>모니터링 지속</td></tr>
   </tbody>
 </table>
 </div>
 
 <p><strong>💡 핵심 요약:</strong> 가격 정책 재검토와 지역별 맞춤 마케팅이 필요합니다.</p>
 
-20. **응답 길이 제한:**
+20. 응답 길이 제한:
    - 각 표는 3-5행 이내로 제한
    - 전체 응답은 2-3개 표로 요약
    - 불필요한 배경 설명 제거
    - 핵심만 간결하게 전달
 
-**당신의 목표**: 사용자가 자연어로 간단히 요청해도 엑셀 데이터 분석과 차트 시각화를 자동으로 정확하게 수행하는 것입니다. 응답은 반드시 HTML 표 형식으로만 작성하세요.
+21. 영향도 표시 규칙 (필수):
+   데이터 분석 시 영향도/중요도/심각도를 표시할 때 반드시 다음 HTML 클래스를 사용하세요:
+   - 높음/긴급/심각: <span class="severity-high">높음</span>
+   - 중간/보통/주의: <span class="severity-medium">중간</span>
+   - 낮음/경미/양호: <span class="severity-low">낮음</span>
+
+   예시:
+   <td><span class="severity-high">높음</span></td>  (빨간색 배경 경고 아이콘)
+   <td><span class="severity-medium">중간</span></td>  (주황색 배경 경고 아이콘)
+   <td><span class="severity-low">낮음</span></td>  (초록색 배경 경고 아이콘)
+
+🚨🚨🚨 최종 경고: 마크다운 문법 절대 사용 금지 🚨🚨🚨
+- 잘못된 예시: ## 제목, **굵게**, - 리스트, 1. 번호
+- 올바른 예시: <h3>제목</h3>, <strong>굵게</strong>, <ul><li>리스트</li></ul>
+
+당신의 목표: 사용자가 자연어로 간단히 요청해도 엑셀 데이터 분석과 차트 시각화를 자동으로 정확하게 수행하는 것입니다. 응답은 반드시 HTML 태그만 사용하여 작성하세요. 마크다운은 절대 사용하지 마세요.
 """
 
     # 대화 이력을 메시지 형식으로 변환

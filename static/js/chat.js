@@ -1563,10 +1563,19 @@ function renderChart(chartData) {
     // 최소 너비 계산 (데이터 개수에 따라)
     const minWidth = chartData.minWidth || '100%';
 
+    // 원 차트는 정사각형 컨테이너, 다른 차트는 가로 스크롤
+    const isPieChart = chartData.type === 'pie';
+    const containerStyle = isPieChart
+        ? 'max-width: 600px; margin: 0 auto; height: 500px;'
+        : '';
+    const wrapperStyle = isPieChart
+        ? 'width: 100%; height: 450px;'
+        : `width: ${minWidth}px;`;
+
     chartContainer.innerHTML = `
-        <div class="chart-container">
-            ${chartTitle ? `<h4 style="margin: 0 0 10px 0; color: #333;">${chartTitle}</h4>` : ''}
-            <div class="chart-wrapper" id="${wrapperId}" style="width: ${minWidth}px;">
+        <div class="chart-container" style="${containerStyle}">
+            ${chartTitle ? `<h4>${chartTitle}</h4>` : ''}
+            <div class="chart-wrapper" id="${wrapperId}" style="${wrapperStyle}">
                 <canvas id="${chartId}"></canvas>
             </div>
         </div>
@@ -1581,8 +1590,15 @@ function renderChart(chartData) {
         const canvas = document.getElementById(chartId);
         if (canvas) {
             const ctx = canvas.getContext('2d');
+
+            // Zoom 플러그인 등록 (Chart.js 4.x)
+            if (typeof Chart !== 'undefined' && typeof zoomPlugin !== 'undefined') {
+                Chart.register(zoomPlugin);
+                console.log('[차트] Zoom 플러그인 등록 완료');
+            }
+
             new Chart(ctx, chartData);
-            console.log(`[차트] 차트 렌더링 완료: ${chartId}, 너비: ${minWidth}px`);
+            console.log(`[차트] 차트 렌더링 완료: ${chartId}, 타입: ${chartData.type}, 너비: ${minWidth}px`);
         } else {
             console.error(`[차트] 캔버스를 찾을 수 없음: ${chartId}`);
         }

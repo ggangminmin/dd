@@ -93,8 +93,8 @@ class AutomationAssistant:
     # 차트 타입 패턴
     CHART_TYPE_PATTERNS = {
         'bar': [r'막대', r'막대그래프', r'막대차트', r'bar', r'바차트'],
-        'line': [r'선', r'선그래프', r'꺾은선', r'line', r'라인'],
-        'pie': [r'원', r'원그래프', r'파이', r'pie', r'도넛']
+        'line': [r'선\s*차트', r'선\s*그래프', r'꺾은선', r'line', r'라인'],
+        'pie': [r'원\s*차트', r'원\s*그래프', r'파이', r'pie', r'도넛']
     }
 
     # 출력 형식 패턴
@@ -367,12 +367,105 @@ class AutomationAssistant:
         return None
 
     @staticmethod
-    def prepare_chart_data(data: Dict[str, Any], chart_type: str = 'bar') -> Optional[Dict[str, Any]]:
+    def detect_chart_types(message: str) -> List[str]:
+        """
+        여러 차트 타입 감지 (복수 차트 생성용)
+        Returns: ['bar', 'line', 'pie'] 리스트
+        """
+        message_lower = message.lower()
+        detected_types = []
+
+        for chart_type, patterns in AutomationAssistant.CHART_TYPE_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, message_lower):
+                    if chart_type not in detected_types:
+                        detected_types.append(chart_type)
+                    break
+
+        # 아무것도 감지되지 않았으면 빈 리스트 반환 (파일 업로드 시 기본값 사용)
+        # "차트", "그래프" 같은 일반적인 단어만으로는 차트 타입을 결정하지 않음
+        return detected_types
+
+    @staticmethod
+    def extract_column_names(message: str, available_columns: List[str]) -> Tuple[Optional[str], List[str]]:
+        """
+        메시지에서 X축(라벨)과 Y축(데이터) 칼럼명 추출
+
+        예시:
+        - "Category별 SalesAmount 선 차트" → ('Category', ['SalesAmount'])
+        - "월별 매출과 이익 막대 그래프" → ('월', ['매출', '이익'])
+
+        Args:
+            message: 사용자 메시지
+            available_columns: 사용 가능한 칼럼명 리스트
+
+        Returns:
+            (x_column, y_columns) 튜플
+            - x_column: X축 칼럼명 (라벨)
+            - y_columns: Y축 칼럼명 리스트 (데이터)
+        """
+        if not available_columns:
+            return (None, [])
+
+        message_lower = message.lower()
+
+        # 칼럼명을 소문자로 매핑 (대소문자 무시 검색용)
+        column_map = {col.lower(): col for col in available_columns}
+
+        x_column = None
+        y_columns = []
+
+        # "A별 B" 패턴 감지 (예: "Category별 SalesAmount")
+        pattern_x_y = r'(\w+)별\s+(\w+(?:\s*,\s*\w+)*)'
+        match = re.search(pattern_x_y, message)
+        if match:
+            x_candidate = match.group(1).lower()
+            y_candidates = [y.strip().lower() for y in match.group(2).split(',')]
+
+            # X축 칼럼 찾기
+            if x_candidate in column_map:
+                x_column = column_map[x_candidate]
+
+            # Y축 칼럼들 찾기
+            for y_cand in y_candidates:
+                if y_cand in column_map:
+                    y_columns.append(column_map[y_cand])
+
+        # "A와 B를 C로" 패턴 감지 (예: "매출과 이익을 월별로")
+        if not x_column or not y_columns:
+            pattern_y_x = r'(\w+(?:\s*(?:와|과|,)\s*\w+)*)\s*(?:를|을)\s*(\w+)(?:별|로)'
+            match = re.search(pattern_y_x, message)
+            if match:
+                y_candidates = re.split(r'\s*(?:와|과|,)\s*', match.group(1))
+                x_candidate = match.group(2).lower()
+
+                # X축 칼럼 찾기
+                if x_candidate in column_map:
+                    x_column = column_map[x_candidate]
+
+                # Y축 칼럼들 찾기
+                for y_cand in y_candidates:
+                    y_cand_lower = y_cand.strip().lower()
+                    if y_cand_lower in column_map:
+                        y_columns.append(column_map[y_cand_lower])
+
+        # 칼럼명이 직접 언급된 경우 (부분 매칭)
+        if not y_columns:
+            for col_lower, col_original in column_map.items():
+                if col_lower in message_lower and col_original not in y_columns:
+                    y_columns.append(col_original)
+
+        return (x_column, y_columns)
+
+    @staticmethod
+    def prepare_chart_data(data: Dict[str, Any], chart_type: str = 'bar', x_column: Optional[str] = None, y_columns: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         """
         엑셀 데이터를 Chart.js 형식으로 변환
         Args:
             data: 테이블 데이터 (table_data)
             chart_type: 차트 타입 ('bar', 'line', 'pie')
+            x_column: X축 칼럼명 (라벨, 선택사항)
+            y_columns: Y축 칼럼명 리스트 (데이터, 선택사항)
         Returns:
             Chart.js 데이터 구조
         """
@@ -386,21 +479,55 @@ class AutomationAssistant:
         if len(headers) < 2 or len(rows) == 0:
             return None
 
+        # 칼럼 인덱스 찾기
+        x_col_idx = 0  # 기본값: 첫 번째 칼럼
+        y_col_indices = list(range(1, len(headers)))  # 기본값: 모든 나머지 칼럼
+
+        if x_column:
+            try:
+                x_col_idx = headers.index(x_column)
+                print(f"[차트] X축 칼럼: {x_column} (인덱스: {x_col_idx})")
+            except ValueError:
+                print(f"[차트] 경고: X축 칼럼 '{x_column}'을 찾을 수 없음, 기본값 사용")
+
+        if y_columns:
+            y_col_indices = []
+            for y_col in y_columns:
+                try:
+                    idx = headers.index(y_col)
+                    y_col_indices.append(idx)
+                    print(f"[차트] Y축 칼럼: {y_col} (인덱스: {idx})")
+                except ValueError:
+                    print(f"[차트] 경고: Y축 칼럼 '{y_col}'을 찾을 수 없음")
+
+            if not y_col_indices:
+                print(f"[차트] Y축 칼럼을 찾을 수 없어 기본값 사용")
+                y_col_indices = list(range(1, len(headers)))
+
         # 첫 번째 컬럼: 라벨 (카테고리)
         # 나머지 컬럼: 데이터셋
         labels = []
         datasets = []
 
         total_rows = len(rows)
-        print(f"[차트] 총 {total_rows}개 행 데이터 - 전체 표시 (스크롤 가능)")
 
-        # 모든 행 사용 (스크롤로 처리)
-        selected_rows = rows
+        # 파이 차트: 상위 10개만 표시 + 기타 (직관성 향상)
+        # 막대/선 차트: 모든 행 표시 (스크롤 가능)
+        if chart_type == 'pie' and total_rows > 10:
+            print(f"[차트] 파이 차트: {total_rows}개 행 → 상위 10개 + 기타로 축약")
+            # 첫 번째 숫자 컬럼의 값으로 정렬 (내림차순)
+            sorted_rows = sorted(rows, key=lambda r: float(r[1]) if len(r) > 1 and isinstance(r[1], (int, float)) else 0, reverse=True)
+            selected_rows = sorted_rows[:10]
+            has_others = True
+        else:
+            print(f"[차트] 총 {total_rows}개 행 데이터 - 전체 표시 (스크롤 가능)")
+            selected_rows = rows
+            has_others = False
 
-        # 라벨 추출 (모든 행)
+        # 라벨 추출 (X축 칼럼 사용)
         for i, row in enumerate(selected_rows):
-            if len(row) > 0:
-                labels.append(str(row[0]))
+            if len(row) > x_col_idx:
+                labels.append(str(row[x_col_idx]))
 
         # 데이터셋 생성 (숫자 컬럼만)
         colors = [
@@ -418,7 +545,7 @@ class AutomationAssistant:
             'rgba(134, 239, 172, 0.8)',  # 연두
         ]
 
-        for col_idx in range(1, len(headers)):  # 모든 데이터셋
+        for col_idx in y_col_indices:  # 선택된 Y축 칼럼만
             col_name = headers[col_idx]
             values = []
 
@@ -437,14 +564,45 @@ class AutomationAssistant:
                 else:
                     values.append(0)
 
+            # 파이 차트에서 "기타" 항목 추가
+            if has_others and chart_type == 'pie':
+                # 나머지 행들의 합계 계산
+                others_sum = 0
+                for row in rows[10:]:  # 상위 10개 제외
+                    if col_idx < len(row):
+                        try:
+                            val = row[col_idx]
+                            if isinstance(val, (int, float)):
+                                others_sum += val
+                            elif isinstance(val, str) and val.replace('.', '').replace('-', '').isdigit():
+                                others_sum += float(val)
+                        except:
+                            pass
+
+                if others_sum > 0:
+                    values.append(others_sum)
+                    # "기타" 라벨 추가 (마지막에 한 번만)
+                    if col_idx == 1 and '기타' not in labels:
+                        labels.append('기타')
+
             # 숫자 데이터가 있으면 데이터셋 추가
             if any(v != 0 for v in values):
-                color_idx = (col_idx - 1) % len(colors)
+                # 색상 인덱스 계산 (y_col_indices에서의 순서 사용)
+                color_idx = y_col_indices.index(col_idx) % len(colors)
+
+                # 파이 차트는 각 조각마다 다른 색상 배열 사용
+                if chart_type == 'pie':
+                    background_colors = [colors[i % len(colors)] for i in range(len(values))]
+                    border_colors = [colors[i % len(colors)].replace('0.8', '1') for i in range(len(values))]
+                else:
+                    background_colors = colors[color_idx]
+                    border_colors = colors[color_idx].replace('0.8', '1')
+
                 datasets.append({
                     'label': col_name,
                     'data': values,
-                    'backgroundColor': colors[color_idx],
-                    'borderColor': colors[color_idx].replace('0.8', '1'),
+                    'backgroundColor': background_colors,
+                    'borderColor': border_colors,
                     'borderWidth': 2
                 })
 
@@ -452,8 +610,70 @@ class AutomationAssistant:
             return None
 
         # 데이터 개수에 따라 차트 너비 계산 (각 데이터 포인트당 최소 너비 확보)
-        min_width_per_point = 40  # 각 데이터 포인트당 최소 40px
-        chart_min_width = len(labels) * min_width_per_point
+        # 원 차트는 고정 너비, 막대/선 차트는 데이터 개수에 비례
+        if chart_type == 'pie':
+            chart_min_width = 600  # 원 차트는 정사각형에 가까운 고정 너비
+            # 파이 차트 제목 (기타 포함 여부 표시)
+            chart_title = f'데이터 시각화 - 원 차트'
+            if has_others:
+                chart_title += f' (상위 10개 + 기타 {total_rows - 10}개)'
+        else:
+            min_width_per_point = 40  # 각 데이터 포인트당 최소 40px
+            chart_min_width = len(labels) * min_width_per_point
+            chart_title = '데이터 시각화'
+
+        # 줌/팬 플러그인 설정 (100개 이상 데이터일 때만)
+        enable_zoom = chart_type in ['bar', 'line'] and total_rows >= 100
+        if enable_zoom:
+            print(f"[차트] {total_rows}개 데이터 → 줌/팬 기능 활성화")
+
+        # plugins 설정 구성
+        plugins_config = {
+            'legend': {
+                'position': 'top',
+                'align': 'start',  # 왼쪽 정렬
+                'labels': {
+                    'boxWidth': 12,
+                    'padding': 10,
+                    'font': {
+                        'size': 11
+                    }
+                }
+            },
+            'title': {
+                'display': True,
+                'text': chart_title + (' (마우스 휠로 줌, 드래그로 이동)' if enable_zoom else ''),
+                'align': 'center',  # 제목은 중앙
+                'padding': {
+                    'bottom': 10
+                }
+            }
+        }
+
+        # zoom 플러그인 설정 추가 (100개 이상일 때만)
+        if enable_zoom:
+            plugins_config['zoom'] = {
+                'zoom': {
+                    'wheel': {
+                        'enabled': True,  # 마우스 휠 줌
+                        'speed': 0.1
+                    },
+                    'pinch': {
+                        'enabled': True  # 모바일 핀치 줌
+                    },
+                    'mode': 'x',  # X축만 줌 (가로)
+                },
+                'pan': {
+                    'enabled': True,  # 팬(드래그) 활성화
+                    'mode': 'x',  # X축만 팬
+                    'modifierKey': None  # 수정키 없이 드래그만으로 팬
+                },
+                'limits': {
+                    'x': {
+                        'minRange': 10  # 최소 10개 항목은 표시
+                    }
+                }
+            }
 
         return {
             'type': chart_type,
@@ -463,16 +683,8 @@ class AutomationAssistant:
             },
             'options': {
                 'responsive': True,
-                'maintainAspectRatio': False,
-                'plugins': {
-                    'legend': {
-                        'position': 'top',
-                    },
-                    'title': {
-                        'display': True,
-                        'text': '데이터 시각화'
-                    }
-                },
+                'maintainAspectRatio': False if chart_type != 'pie' else True,
+                'plugins': plugins_config,
                 'scales': {
                     'x': {
                         'ticks': {
