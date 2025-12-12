@@ -1548,34 +1548,46 @@ window.onclick = function(event) {
  */
 let chartCounter = 0;  // 고유 ID 생성용 카운터
 
+// 파이 차트 그룹핑을 위한 임시 배열
+let pendingPieCharts = [];
+let pieChartTimer = null;
+
 function renderChart(chartData) {
     const messagesDiv = document.getElementById('chat-messages');
+    const isPieChart = chartData.type === 'pie';
+
+    // 파이 차트는 그룹으로 모아서 나중에 렌더링
+    if (isPieChart) {
+        pendingPieCharts.push(chartData);
+
+        // 기존 타이머 취소
+        if (pieChartTimer) {
+            clearTimeout(pieChartTimer);
+        }
+
+        // 100ms 후에 모든 파이 차트를 그리드로 렌더링
+        pieChartTimer = setTimeout(() => {
+            renderPieChartGrid(pendingPieCharts);
+            pendingPieCharts = [];
+            pieChartTimer = null;
+        }, 100);
+
+        return;
+    }
+
+    // 일반 차트 (막대, 선)는 기존 방식대로
     const chartContainer = document.createElement('div');
     chartContainer.className = 'message bot';
 
-    // 고유한 ID 생성 (Date.now() + 카운터로 충돌 방지)
     const chartId = `chart-${Date.now()}-${chartCounter++}`;
     const wrapperId = `wrapper-${chartId}`;
-
-    // 시트 이름이 있으면 제목으로 표시
     const chartTitle = chartData.options?.plugins?.title?.text || '';
-
-    // 최소 너비 계산 (데이터 개수에 따라)
-    const minWidth = chartData.minWidth || '100%';
-
-    // 원 차트는 정사각형 컨테이너, 다른 차트는 가로 스크롤
-    const isPieChart = chartData.type === 'pie';
-    const containerStyle = isPieChart
-        ? 'max-width: 600px; margin: 0 auto; height: 500px;'
-        : '';
-    const wrapperStyle = isPieChart
-        ? 'width: 100%; height: 450px;'
-        : `width: ${minWidth}px;`;
+    const minWidth = chartData.minWidth || 800;
 
     chartContainer.innerHTML = `
-        <div class="chart-container" style="${containerStyle}">
+        <div class="chart-container" style="width: 100%;">
             ${chartTitle ? `<h4>${chartTitle}</h4>` : ''}
-            <div class="chart-wrapper" id="${wrapperId}" style="${wrapperStyle}">
+            <div class="chart-wrapper" id="${wrapperId}" style="min-width: ${minWidth}px; height: 450px;">
                 <canvas id="${chartId}"></canvas>
             </div>
         </div>
@@ -1597,12 +1609,129 @@ function renderChart(chartData) {
                 console.log('[차트] Zoom 플러그인 등록 완료');
             }
 
+            // 다크모드 지원: 축 레이블 색상 동적 설정
+            const isDarkMode = document.body.getAttribute('data-theme') === 'dark';
+            const textColor = isDarkMode ? '#e5e7eb' : '#374151';
+
+            // 차트 옵션에 색상 적용
+            if (chartData.options && chartData.options.scales) {
+                if (chartData.options.scales.x) {
+                    chartData.options.scales.x.ticks = chartData.options.scales.x.ticks || {};
+                    chartData.options.scales.x.ticks.color = textColor;
+                    chartData.options.scales.x.title = chartData.options.scales.x.title || {};
+                    chartData.options.scales.x.title.color = textColor;
+                }
+                if (chartData.options.scales.y) {
+                    chartData.options.scales.y.ticks = chartData.options.scales.y.ticks || {};
+                    chartData.options.scales.y.ticks.color = textColor;
+                    chartData.options.scales.y.title = chartData.options.scales.y.title || {};
+                    chartData.options.scales.y.title.color = textColor;
+
+                    // Y축 숫자 포맷팅 콜백 함수 변환
+                    if (chartData.options.scales.y.ticks.callback && typeof chartData.options.scales.y.ticks.callback === 'string') {
+                        chartData.options.scales.y.ticks.callback = new Function('value', 'index', 'ticks', `
+                            if (value >= 1000000) {
+                                return (value/1000000).toFixed(1) + 'M';
+                            } else if (value >= 1000) {
+                                return (value/1000).toFixed(0) + 'K';
+                            } else {
+                                return value.toLocaleString();
+                            }
+                        `);
+                    }
+                }
+            }
+
+            // 툴팁 콜백 함수 변환
+            if (chartData.options && chartData.options.plugins && chartData.options.plugins.tooltip) {
+                if (chartData.options.plugins.tooltip.callbacks && chartData.options.plugins.tooltip.callbacks.label) {
+                    if (typeof chartData.options.plugins.tooltip.callbacks.label === 'string') {
+                        chartData.options.plugins.tooltip.callbacks.label = new Function('context', `
+                            return "빈도: " + context.parsed.y.toLocaleString() + "개";
+                        `);
+                    }
+                }
+            }
+
             new Chart(ctx, chartData);
             console.log(`[차트] 차트 렌더링 완료: ${chartId}, 타입: ${chartData.type}, 너비: ${minWidth}px`);
         } else {
             console.error(`[차트] 캔버스를 찾을 수 없음: ${chartId}`);
         }
     }, 10);
+}
+
+/**
+ * 파이 차트 그리드 렌더링 (2개씩 가로 배치)
+ */
+function renderPieChartGrid(pieCharts) {
+    if (!pieCharts || pieCharts.length === 0) return;
+
+    const messagesDiv = document.getElementById('chat-messages');
+    const gridContainer = document.createElement('div');
+    gridContainer.className = 'message bot';
+
+    // 그리드 HTML 생성 및 ID 저장
+    let gridHTML = '<div class="pie-chart-grid">';
+    const chartIds = [];
+
+    pieCharts.forEach((chartData, index) => {
+        const chartId = `pie-chart-${Date.now()}-${chartCounter++}`;
+        chartIds.push(chartId);
+        const wrapperId = `wrapper-${chartId}`;
+        const chartTitle = chartData.options?.plugins?.title?.text || '';
+
+        gridHTML += `
+            <div class="pie-chart-item">
+                <div class="chart-container" style="max-width: 100%; margin: 0;">
+                    ${chartTitle ? `<h4 style="text-align: center; margin-bottom: 15px; font-size: 15px;">${chartTitle}</h4>` : ''}
+                    <div class="chart-wrapper" id="${wrapperId}" style="width: 100%; height: 400px;">
+                        <canvas id="${chartId}"></canvas>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    gridHTML += '</div>';
+    gridHTML += `<div class="message-time">${getCurrentTime()}</div>`;
+
+    gridContainer.innerHTML = gridHTML;
+    messagesDiv.appendChild(gridContainer);
+    scrollToBottom();
+
+    // 각 파이 차트 렌더링
+    setTimeout(() => {
+        pieCharts.forEach((chartData, index) => {
+            const chartId = chartIds[index];
+            const canvas = document.getElementById(chartId);
+
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+
+                // 다크모드 지원
+                const isDarkMode = document.body.getAttribute('data-theme') === 'dark';
+                const textColor = isDarkMode ? '#e5e7eb' : '#374151';
+
+                // 범례 텍스트 색상 적용
+                if (chartData.options && chartData.options.plugins && chartData.options.plugins.legend) {
+                    chartData.options.plugins.legend.labels = chartData.options.plugins.legend.labels || {};
+                    chartData.options.plugins.legend.labels.color = textColor;
+                    chartData.options.plugins.legend.labels.font = {size: 11};
+                }
+
+                // 제목 숨김 (HTML h4로 이미 표시됨)
+                if (chartData.options && chartData.options.plugins && chartData.options.plugins.title) {
+                    chartData.options.plugins.title.display = false;
+                }
+
+                new Chart(ctx, chartData);
+                console.log(`[파이 차트 그리드] 차트 ${index + 1}/${pieCharts.length} 렌더링 완료: ${chartId}`);
+            } else {
+                console.error(`[파이 차트 그리드] 캔버스를 찾을 수 없음: ${chartId}`);
+            }
+        });
+    }, 50);
 }
 
 

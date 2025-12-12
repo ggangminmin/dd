@@ -579,39 +579,23 @@ def chat():
     if file_contents:
         full_message += "\n\n[첨부된 파일 내용]\n" + "\n\n".join(file_contents)
 
-        # 업무 자동화: 엑셀 파일이 있으면 자동 분석 수행
-        for attached_file in attached_files:
-            if 'table_data' in attached_file and attached_file.get('extension') in ['xlsx', 'csv']:
-                print(f"[자동화] 엑셀 파일 자동 분석 시작: {attached_file['filename']}")
+        # 업무 자동화: 사용자가 EDA 관련 키워드를 입력한 경우에만 EDA 수행
+        eda_results = []
+        eda_keywords = ['eda', '분석', '탐색', '데이터 분석', '통계', '시각화', '요약', 'analyze', 'analysis', 'explore']
+        user_wants_eda = any(keyword in user_message.lower() for keyword in eda_keywords)
 
-                # AutomationAssistant를 사용한 데이터 분석
-                analysis_result = AutomationAssistant.analyze_excel_data(
-                    {'table_data': attached_file['table_data']},
-                    user_message
-                )
+        if user_wants_eda:
+            for attached_file in attached_files:
+                if 'table_data' in attached_file and attached_file.get('extension') in ['xlsx', 'csv']:
+                    print(f"[사용자 요청 EDA] 엑셀 파일 분석 시작: {attached_file['filename']}")
 
-                if analysis_result.get('success'):
-                    # 분석 결과를 메시지에 추가
-                    analysis_summary = "\n\n[📊 자동 데이터 분석 결과]\n"
+                    # EDA 수행
+                    eda_result = AutomationAssistant.perform_eda({'table_data': attached_file['table_data']})
 
-                    if 'basic_info' in analysis_result:
-                        info = analysis_result['basic_info']
-                        analysis_summary += f"- 총 행 수: {info.get('total_rows', 0)}\n"
-                        analysis_summary += f"- 총 열 수: {info.get('total_columns', 0)}\n"
-                        analysis_summary += f"- 컬럼: {', '.join(info.get('columns', []))}\n"
-
-                    if 'statistics' in analysis_result and analysis_result['statistics']:
-                        analysis_summary += "\n[통계 정보]\n"
-                        for col_name, stats in analysis_result['statistics'].items():
-                            analysis_summary += f"\n{col_name}:\n"
-                            analysis_summary += f"  - 평균: {stats.get('average', 0):.2f}\n"
-                            analysis_summary += f"  - 합계: {stats.get('sum', 0):.2f}\n"
-                            analysis_summary += f"  - 최소: {stats.get('min', 0)}\n"
-                            analysis_summary += f"  - 최대: {stats.get('max', 0)}\n"
-
-                    full_message += analysis_summary
-                    automation_analysis = analysis_result
-                    print(f"[자동화] 분석 완료 - 통계 컬럼 수: {len(analysis_result.get('statistics', {}))}")
+                    if eda_result.get('success'):
+                        eda_results.append(eda_result)
+                        print(f"[사용자 요청 EDA] 완료 - {eda_result.get('summary')}")
+                        print(f"[사용자 요청 EDA] 차트 수: {len(eda_result.get('charts', []))}")
 
     # 사용자 메시지 저장
     message_id = db.save_message(user_id, user_message if user_message else "", is_user=True, sentiment=sentiment)
@@ -699,11 +683,7 @@ def chat():
             if attached_files:  # 파일을 찾았으면 중단
                 break
 
-    # 엑셀/CSV 파일이 있으면 차트 타입이 없어도 기본 막대 차트 생성
-    has_spreadsheet = any(f.get('extension') in ['xlsx', 'csv'] for f in attached_files)
-    if not chart_types and has_spreadsheet:
-        chart_types = ['bar']  # 기본값: 막대 그래프
-        print(f"[차트] 엑셀/CSV 파일 감지 - 자동으로 {chart_types[0]} 차트 생성")
+    # 차트 타입이 없으면 차트 생성 안 함 (사용자가 명시적으로 요청해야 함)
 
     if chart_types and attached_files:
         # 사용자 메시지에서 칼럼명 추출
@@ -742,7 +722,8 @@ def chat():
                                 {'table_data': sheet_data},
                                 chart_type,
                                 x_column,
-                                y_columns
+                                y_columns,
+                                user_message
                             )
 
                             if chart_data:
@@ -769,7 +750,8 @@ def chat():
                             {'table_data': attached_file['table_data']},
                             chart_type,
                             x_column,
-                            y_columns
+                            y_columns,
+                            user_message
                         )
                         if chart_data:
                             # 차트 타입을 제목에 추가
@@ -801,6 +783,25 @@ def chat():
     else:
         bot_response = generate_rule_based_response(full_message, sentiment)
 
+    # EDA 결과를 봇 응답에 추가
+    if eda_results:
+        eda_summary = "\n\n📊 **탐색적 데이터 분석(EDA) 결과**\n\n"
+        for eda_result in eda_results:
+            if eda_result.get('success'):
+                # 통계 HTML 추가
+                eda_summary += eda_result.get('stats_html', '')
+                # 인사이트 추가
+                insights = eda_result.get('insights', '')
+                if insights:
+                    eda_summary += f"\n\n**💡 주요 인사이트**\n{insights}\n"
+                # EDA 차트를 chart_data_list에 추가
+                eda_charts = eda_result.get('charts', [])
+                if eda_charts:
+                    chart_data_list.extend(eda_charts)
+                    print(f"[EDA] {len(eda_charts)}개 차트 추가")
+
+        bot_response = eda_summary + "\n\n" + bot_response
+
     # 봇 응답 저장
     db.save_message(user_id, bot_response, is_user=False, sentiment='neutral')
 
@@ -816,7 +817,7 @@ def chat():
     # 차트 데이터가 있으면 추가 (여러 차트 지원)
     if chart_data_list:
         response_data['chart_data_list'] = chart_data_list
-        print(f"[응답] {len(chart_data_list)}개 차트 데이터 전달")
+        print(f"[응답] {len(chart_data_list)}개 차트 데이터 전달 (EDA 차트 포함)")
 
     return jsonify(response_data)
 
@@ -969,12 +970,13 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
 
 🤖 데이터 시각화 전문 비서 역할:
 
-당신은 엑셀(XLSX/CSV) 데이터를 자동으로 분석하고 시각화하는 전문가입니다.
+당신은 엑셀(XLSX/CSV) 데이터를 분석하고 시각화하는 전문가입니다.
 
-10. 데이터 구조 자동 파악:
-    - 업로드된 엑셀/CSV의 컬럼 구조를 자동으로 분석합니다
-    - 컬럼 타입 자동 인식: 날짜형(Date), 숫자형(Numeric), 카테고리형(Category), 텍스트형(Text)
-    - 각 컬럼의 특성을 파악하여 최적의 시각화 방법을 제안합니다
+10. 데이터 파일 첨부 시 기본 동작:
+    - Excel/CSV 파일이 첨부되면 먼저 데이터의 구조와 내용을 간단히 설명합니다
+    - 어떤 형식의 데이터인지, 어떤 컬럼들이 있는지, 각 컬럼의 의미가 무엇인지 설명합니다
+    - "분석", "EDA", "데이터 분석", "통계", "시각화" 등의 키워드가 없으면 상세 분석을 하지 않습니다
+    - 사용자가 명시적으로 분석을 요청할 때까지 기다립니다
 
 11. 자연어 명령 해석 규칙:
     사용자 요청을 다음 요소로 분해하여 처리합니다:
@@ -1028,9 +1030,9 @@ def generate_gpt_response(user_id, message, sentiment, has_image=False, image_in
     - 숫자는 구체적으로 제시합니다 (예: "평균 50만원", "최대 120만원")
     - 사용자가 다음 액션을 취할 수 있도록 구체적 제안을 제공합니다
 
-📊 데이터 분석 결과 표시 형식 (필수):
+📊 데이터 분석 결과 표시 형식:
 
-17. Excel/CSV 데이터 분석 결과는 반드시 HTML 표 형식으로 출력하세요:
+17. 사용자가 "분석", "EDA", "통계" 등을 요청했을 때만 HTML 표 형식으로 상세 분석을 출력하세요:
 
 <div class='data-analysis-table'>
 <h4>분석 제목</h4>
